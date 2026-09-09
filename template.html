@@ -1,4 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>BB Stock Room</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Stock Room">
+<meta name="theme-color" content="#141A21">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
 <style>
@@ -117,7 +126,8 @@ select.sel{width:100%;appearance:none;-webkit-appearance:none;background:var(--s
 @media (prefers-reduced-motion:no-preference){ .detail{animation:fade .12s ease-out} }
 @keyframes fade{from{opacity:.4}to{opacity:1}}
 </style>
-
+</head>
+<body>
 <div id="app">
   <header class="top">
     <div class="row">
@@ -483,3 +493,5 @@ try { const s = localStorage.getItem('bb-tab'); if (s && renderers[s]) start = s
 go(start);
 })();
 </script>
+</body>
+</html>
