@@ -538,7 +538,7 @@ function renderFBA(){
   </div>
   <div class="eyebrow">Needs restock at Amazon<span class="cnt num">${fbaAtRisk.length}</span></div>
   ${listWithMore(fbaAtRisk, fbaRow, 40)}
-  ${fbaTotals.stuck ? `<div class="eyebrow">Stuck inventory<span class="cnt num">${fmt(fbaTotals.stuck)")} units</span></div>${listWithMore(fbaStuckList, fbaRow, 20)}<p class="note">Sitting in Unfulfillable / Researching / Problem at Amazon — tied up and not sellable until it's worked in Seller Central.</p>` : ''}
+  ${fbaTotals.stuck ? `<div class="eyebrow">Stuck inventory<span class="cnt num">${fmt(fbaTotals.stuck)} units</span></div>${listWithMore(fbaStuckList, fbaRow, 20)}<p class="note">Sitting in Unfulfillable / Researching / Problem at Amazon — tied up and not sellable until it's worked in Seller Central.</p>` : ''}
   <p class="note">Fulfillable = sellable right now at Amazon; cover uses the same blended, all-channel sales velocity as the rest of this dashboard (Finale doesn't split velocity by channel), so treat it as a first pass, not an exact Amazon-only rate. The restock suggestion targets ~45 days of Amazon cover and is capped by what's actually on hand outside Amazon.</p>`;
 }
 
