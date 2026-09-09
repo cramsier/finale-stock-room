@@ -1,0 +1,33 @@
+name: Refresh Finale Dashboard
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pull latest data from Finale
+        env:
+          FINALE_ACCOUNT: beardedbutchers
+          FINALE_KEY: ${{ secrets.FINALE_KEY }}
+          FINALE_SECRET: ${{ secrets.FINALE_SECRET }}
+        run: python3 pull_finale.py snapshot.json
+      - name: Rebuild the dashboard page
+        run: python3 build.py snapshot.json docs/index.html
+      - name: Publish
+        run: |
+          git config user.name "finale-dashboard-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add docs/index.html
+          git diff --quiet --cached || git commit -m "Auto-refresh $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git push
