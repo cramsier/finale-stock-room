@@ -59,7 +59,7 @@ section.screen{display:none}
 section.screen.active{display:block}
 
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--tab-bg);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
-nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr);gap:2px}
+nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(6,1fr);gap:2px}
 nav.tabs button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px 4px;border-radius:10px;color:var(--ink-3);font-family:"Barlow Condensed",sans-serif;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;position:relative}
 nav.tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 nav.tabs button.active{color:var(--accent)}
@@ -141,6 +141,7 @@ select.sel{width:100%;appearance:none;-webkit-appearance:none;background:var(--s
     <section class="screen" id="s-inbound"></section>
     <section class="screen" id="s-orders"></section>
     <section class="screen" id="s-lots"></section>
+    <section class="screen" id="s-fba"></section>
   </main>
   <nav class="tabs" aria-label="Screens"><div class="in">
     <button data-tab="home" class="active"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
@@ -148,6 +149,7 @@ select.sel{width:100%;appearance:none;-webkit-appearance:none;background:var(--s
     <button data-tab="inbound"><svg viewBox="0 0 24 24"><path d="M1 8h14v9H1z"/><path d="M15 11h4l4 3v3h-8"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/></svg>Inbound<span class="badge" id="b-inbound" hidden></span></button>
     <button data-tab="orders"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Orders<span class="badge" id="b-orders" hidden></span></button>
     <button data-tab="lots"><svg viewBox="0 0 24 24"><path d="M3 5h3v14H3zM8 5h2v14H8zM12 5h4v14h-4zM18 5h3v14h-3z"/></svg>Lots</button>
+    <button data-tab="fba"><svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>FBA<span class="badge" id="b-fba" hidden></span></button>
   </div></nav>
 </div>
 
@@ -213,11 +215,44 @@ const tStale = T.filter(t => /received/i.test(t.shipStatus||''));
 const tMoving = T.filter(t => !/received/i.test(t.shipStatus||'') && t.dest !== 'BBHQ');
 const lotted = P.filter(p => p.lots.length);
 
+// ---- Amazon FBA derived ----
+// Finale tracks Amazon as its own set of locations per SKU (Fulfillable, FC Processing/Transfer,
+// Inbound Receiving/Shipped, AWD Outbound, Unfulfillable, Researching). Bucket those into
+// sellable-now / in-the-pipeline / stuck, per product.
+function fbaBuckets(p){
+  let full = 0, inb = 0, stuck = 0;
+  for (const [loc, qty] of Object.entries(p.byLoc)){
+    if (!loc.includes('Amazon')) continue;
+    if (loc.includes('Unfulfillable') || loc.includes('Researching') || loc.includes('Problem')) stuck += qty;
+    else if (loc.includes('Fulfillable')) full += qty;
+    else inb += qty;
+  }
+  return { full, inb, stuck };
+}
+const fbaAll = P.filter(p => Object.keys(p.byLoc).some(l => l.includes('Amazon'))).map(p => Object.assign({}, p, { fbaB: fbaBuckets(p) }));
+const fbaCover = p => p.vel > 0 ? Math.round(p.fbaB.full / p.vel) : null;
+const fbaCoverClass = p => {
+  if (p.vel <= 0) return '';
+  if (p.fbaB.full <= 0) return p.fbaB.inb > 0 ? 'warn' : 'crit';
+  const c = fbaCover(p);
+  if (c <= 14) return 'crit';
+  if (c <= 30) return 'warn';
+  return 'good';
+};
+const fbaAtRisk = fbaAll.filter(p => p.vel > 0 && (p.fbaB.full <= 0 || fbaCover(p) <= 30)).sort((a,b) => {
+  const av = a.fbaB.full <= 0 ? -1 : fbaCover(a), bv = b.fbaB.full <= 0 ? -1 : fbaCover(b);
+  return av - bv || b.vel - a.vel;
+});
+const fbaUrgent = fbaAll.filter(p => p.vel > 0 && p.fbaB.full <= 0 && p.fbaB.inb <= 0);
+const fbaStuckList = fbaAll.filter(p => p.fbaB.stuck > 0).sort((a,b) => b.fbaB.stuck - a.fbaB.stuck);
+const fbaTotals = fbaAll.reduce((a,p) => ({ full: a.full+p.fbaB.full, inb: a.inb+p.fbaB.inb, stuck: a.stuck+p.fbaB.stuck }), {full:0, inb:0, stuck:0});
+
 // badges
 const badge = (id, n) => { const b = $('#'+id); if (n > 0) { b.textContent = n > 99 ? '99+' : n; b.hidden = false; } };
 badge('b-stock', outList.length);
 badge('b-inbound', latePOs.length);
 badge('b-orders', backorders.length);
+badge('b-fba', fbaUrgent.length);
 
 // ---- helpers ----
 function toggleRow(li){ li.classList.toggle('open'); li.querySelector('.rowbtn').setAttribute('aria-expanded', li.classList.contains('open')); }
@@ -473,9 +508,43 @@ function renderLots(){
   <p class="note">Finale has lot tracking on, but only these SKUs have lot IDs recorded, and the IDs don't carry a best-by date. Expiry can't be tracked from Finale until lots are entered at receiving with a date in the lot ID or a custom field.</p>`;
 }
 
+// ---- FBA ----
+function fbaRow(p){
+  const cc = fbaCoverClass(p);
+  const cover = fbaCover(p);
+  const coverTxt = p.vel <= 0 ? '—' : p.fbaB.full <= 0 ? (p.fbaB.inb > 0 ? 'out · inbound' : 'OUT') : cover >= 999 ? '365+ d' : `${fmt(cover)} d`;
+  const warehouse = Math.max(0, p.onHand - p.fbaB.full - p.fbaB.inb - p.fbaB.stuck);
+  const target = p.vel > 0 ? Math.round(p.vel * 45) : 0;
+  const need = Math.max(0, target - p.fbaB.full - p.fbaB.inb);
+  const ship = Math.min(need, warehouse);
+  const kv = [];
+  kv.push(`<div class="k">Fulfillable at Amazon</div><div class="v num">${fmt(p.fbaB.full)}</div>`);
+  kv.push(`<div class="k">Inbound to Amazon</div><div class="v num">${fmt(p.fbaB.inb)}</div>`);
+  if (p.fbaB.stuck) kv.push(`<div class="k">Stuck (unfulfillable / researching)</div><div class="v num">${fmt(p.fbaB.stuck)}</div>`);
+  kv.push(`<div class="k">Available at HQ / other locations</div><div class="v num">${fmt(warehouse)}</div>`);
+  kv.push(`<div class="k">Velocity (all channels)</div><div class="v num">${p.vel ? p.vel.toFixed(2) + ' /day' : '—'}</div>`);
+  if (need > 0) kv.push(`<div class="note">To reach ~45 days of Amazon cover: ship ${fmt(ship)}${ship < need ? ` (would need ${fmt(need)}; only ${fmt(warehouse)} on hand elsewhere)` : ''}.</div>`);
+  return `<li class="stripe ${cc==='crit'||cc==='warn'?cc:''}"><button class="rowbtn" aria-expanded="false">
+    <div><div class="t">${esc(p.desc || p.id)}</div><div class="s num">${esc(p.id)} · ${fmt(p.fbaB.inb)} inbound</div></div>
+    <div class="r"><div class="big num">${fmt(p.fbaB.full)}<small>fulfillable</small></div><span class="pill ${cc}">${coverTxt}</span></div>
+  </button><div class="detail"><div class="kv">${kv.join('')}</div></div></li>`;
+}
+function renderFBA(){
+  const el = $('#s-fba');
+  el.innerHTML = `
+  <div class="tiles" style="grid-template-columns:1fr 1fr">
+    <div class="tile"><span class="l">Fulfillable at Amazon</span><span class="v num">${fmt(fbaTotals.full)}</span><span class="d">across ${fmt(fbaAll.length)} SKUs on Amazon</span></div>
+    <div class="tile"><span class="l">Inbound to Amazon</span><span class="v num">${fmt(fbaTotals.inb)}</span><span class="d">already moving</span></div>
+  </div>
+  <div class="eyebrow">Needs restock at Amazon<span class="cnt num">${fbaAtRisk.length}</span></div>
+  ${listWithMore(fbaAtRisk, fbaRow, 40)}
+  ${fbaTotals.stuck ? `<div class="eyebrow">Stuck inventory<span class="cnt num">${fmt(fbaTotals.stuck)")} units</span></div>${listWithMore(fbaStuckList, fbaRow, 20)}<p class="note">Sitting in Unfulfillable / Researching / Problem at Amazon — tied up and not sellable until it's worked in Seller Central.</p>` : ''}
+  <p class="note">Fulfillable = sellable right now at Amazon; cover uses the same blended, all-channel sales velocity as the rest of this dashboard (Finale doesn't split velocity by channel), so treat it as a first pass, not an exact Amazon-only rate. The restock suggestion targets ~45 days of Amazon cover and is capped by what's actually on hand outside Amazon.</p>`;
+}
+
 // ---- nav ----
 const rendered = {};
-const renderers = { home: renderHome, stock: renderStock, inbound: renderInbound, orders: renderOrders, lots: renderLots };
+const renderers = { home: renderHome, stock: renderStock, inbound: renderInbound, orders: renderOrders, lots: renderLots, fba: renderFBA };
 function go(tab, chip){
   document.querySelectorAll('section.screen').forEach(s => s.classList.toggle('active', s.id === 's-' + tab));
   document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
