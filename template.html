@@ -1,0 +1,485 @@
+<title>BB Stock Room</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+:root{
+  --bg:#EDF0F3; --surface:#FFFFFF; --surface-2:#F5F7F9; --line:#D7DDE3; --line-soft:#E6EAEE;
+  --ink:#141A21; --ink-2:#4A5560; --ink-3:#7B8794;
+  --accent:#1F7A8C; --accent-ink:#FFFFFF; --accent-soft:#DDEFF2;
+  --good:#2E7D4F; --good-soft:#DFF2E6; --warn:#B5730A; --warn-soft:#FBEBCF; --crit:#B3261E; --crit-soft:#F8DEDC;
+  --tab-bg:rgba(255,255,255,.92); --shadow:0 -1px 0 var(--line);
+  --bar-track:#E1E6EB;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0F1418; --surface:#171E25; --surface-2:#1E262E; --line:#2C363F; --line-soft:#232C34;
+    --ink:#E6EBF0; --ink-2:#AAB6C1; --ink-3:#7A8791;
+    --accent:#4FB3C4; --accent-ink:#0F1418; --accent-soft:#173A41;
+    --good:#5CC48A; --good-soft:#173826; --warn:#E8A93A; --warn-soft:#3B2C0F; --crit:#F0655C; --crit-soft:#3F1B18;
+    --tab-bg:rgba(23,30,37,.94); --bar-track:#2A343D;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0F1418; --surface:#171E25; --surface-2:#1E262E; --line:#2C363F; --line-soft:#232C34;
+  --ink:#E6EBF0; --ink-2:#AAB6C1; --ink-3:#7A8791;
+  --accent:#4FB3C4; --accent-ink:#0F1418; --accent-soft:#173A41;
+  --good:#5CC48A; --good-soft:#173826; --warn:#E8A93A; --warn-soft:#3B2C0F; --crit:#F0655C; --crit-soft:#3F1B18;
+  --tab-bg:rgba(23,30,37,.94); --bar-track:#2A343D;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{background:var(--bg);color:var(--ink);font-family:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:15px;line-height:1.35;-webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent}
+.num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum"}
+h1,h2,h3,.disp{font-family:"Barlow Condensed","Barlow",system-ui,sans-serif;text-wrap:balance;margin:0}
+button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+button:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+input,select{font:inherit;color:var(--ink)}
+
+/* ---- shell ---- */
+#app{max-width:720px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
+header.top{position:sticky;top:0;z-index:5;background:var(--tab-bg);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:calc(10px + env(safe-area-inset-top)) 16px 10px}
+header.top .row{display:flex;align-items:baseline;justify-content:space-between;gap:12px}
+header.top h1{font-size:22px;font-weight:700;letter-spacing:.02em;text-transform:uppercase}
+header.top .stamp{font-size:12px;color:var(--ink-3);white-space:nowrap}
+header.top .stamp b{color:var(--ink-2);font-weight:500}
+main{flex:1;padding:12px 12px calc(84px + env(safe-area-inset-bottom))}
+section.screen{display:none}
+section.screen.active{display:block}
+
+nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--tab-bg);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
+nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr);gap:2px}
+nav.tabs button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px 4px;border-radius:10px;color:var(--ink-3);font-family:"Barlow Condensed",sans-serif;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;position:relative}
+nav.tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+nav.tabs button.active{color:var(--accent)}
+nav.tabs button .badge{position:absolute;top:2px;right:calc(50% - 22px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--crit);color:#fff;font-size:10.5px;line-height:16px;font-family:"Barlow",sans-serif;font-weight:600}
+
+/* ---- shared pieces ---- */
+.eyebrow{font-family:"Barlow Condensed",sans-serif;font-size:12.5px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin:18px 4px 8px}
+.eyebrow:first-child{margin-top:4px}
+.eyebrow .cnt{color:var(--ink-2);margin-left:6px}
+.panel{background:var(--surface);border:1px solid var(--line-soft);border-radius:12px;overflow:hidden}
+.list{list-style:none;margin:0;padding:0}
+.list>li{border-top:1px solid var(--line-soft)}
+.list>li:first-child{border-top:0}
+.rowbtn{display:grid;grid-template-columns:1fr auto;gap:4px 12px;align-items:center;width:100%;text-align:left;padding:11px 14px;min-height:56px}
+.rowbtn .t{font-weight:500;font-size:15px;line-height:1.25;overflow-wrap:anywhere}
+.rowbtn .s{font-size:12.5px;color:var(--ink-3);margin-top:2px;overflow-wrap:anywhere}
+.rowbtn .r{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:3px}
+.rowbtn .big{font-family:"Barlow Condensed",sans-serif;font-size:22px;font-weight:600;line-height:1}
+.rowbtn .big small{font-size:12px;font-weight:500;color:var(--ink-3);margin-left:3px;font-family:"Barlow",sans-serif}
+.pill{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;letter-spacing:.02em;padding:2px 7px;border-radius:6px;background:var(--surface-2);color:var(--ink-2);white-space:nowrap}
+.pill.good{background:var(--good-soft);color:var(--good)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.crit{background:var(--crit-soft);color:var(--crit)}
+.pill.acc{background:var(--accent-soft);color:var(--accent)}
+.detail{display:none;padding:0 14px 14px;background:var(--surface-2);border-top:1px dashed var(--line)}
+li.open .detail{display:block}
+.kv{display:grid;grid-template-columns:1fr auto;gap:6px 12px;padding-top:10px;font-size:13.5px}
+.kv .k{color:var(--ink-2)}
+.kv .v{text-align:right;font-weight:500}
+.kv .h{grid-column:1/-1;font-family:"Barlow Condensed",sans-serif;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-top:8px}
+.kv .note{grid-column:1/-1;font-size:12.5px;color:var(--ink-3)}
+.bar{height:6px;border-radius:3px;background:var(--bar-track);overflow:hidden;margin-top:6px}
+.bar i{display:block;height:100%;border-radius:3px;background:var(--accent)}
+.bar.good i{background:var(--good)} .bar.warn i{background:var(--warn)} .bar.crit i{background:var(--crit)}
+.empty{padding:28px 16px;text-align:center;color:var(--ink-3);font-size:14px}
+.chips{display:flex;gap:6px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+.chips::-webkit-scrollbar{display:none}
+.chip{flex:0 0 auto;padding:6px 11px;border-radius:999px;border:1px solid var(--line);background:var(--surface);font-size:13px;font-weight:500;color:var(--ink-2)}
+.chip.active{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.chip .n{opacity:.7;margin-left:4px;font-variant-numeric:tabular-nums}
+.search{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:0 10px;margin-bottom:8px}
+.search svg{width:18px;height:18px;stroke:var(--ink-3);fill:none;stroke-width:2;flex:none}
+.search input{flex:1;border:0;background:none;padding:11px 0;font-size:16px;min-width:0}
+.search input::placeholder{color:var(--ink-3)}
+.search button{color:var(--ink-3);padding:6px;font-size:13px}
+select.sel{width:100%;appearance:none;-webkit-appearance:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:15px;margin-bottom:8px}
+.more{width:100%;padding:12px;text-align:center;color:var(--accent);font-weight:600;font-size:14px;border-top:1px solid var(--line-soft)}
+
+/* ---- home ---- */
+.tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+@media (min-width:560px){.tiles{grid-template-columns:repeat(4,1fr)}}
+.tile{background:var(--surface);border:1px solid var(--line-soft);border-radius:12px;padding:12px 14px 12px;display:flex;flex-direction:column;gap:2px;text-align:left;min-height:88px}
+.tile .l{font-family:"Barlow Condensed",sans-serif;font-size:12.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
+.tile .v{font-family:"Barlow Condensed",sans-serif;font-size:34px;font-weight:700;line-height:1.05;margin-top:2px}
+.tile .d{font-size:12.5px;color:var(--ink-2);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tile .d .dot{width:8px;height:8px;border-radius:50%;background:var(--ink-3);flex:none}
+.tile .d .dot.crit{background:var(--crit)} .tile .d .dot.warn{background:var(--warn)} .tile .d .dot.good{background:var(--good)}
+.note{font-size:13px;color:var(--ink-3);padding:6px 4px 0;line-height:1.4}
+.stripe{border-left:3px solid transparent}
+.stripe.crit{border-left-color:var(--crit)} .stripe.warn{border-left-color:var(--warn)}
+.lotgrid{display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;font-size:13.5px;padding-top:8px}
+.lotgrid .hd{font-family:"Barlow Condensed",sans-serif;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.lotgrid .q{text-align:right;font-weight:500}
+@media (prefers-reduced-motion:no-preference){ .detail{animation:fade .12s ease-out} }
+@keyframes fade{from{opacity:.4}to{opacity:1}}
+</style>
+
+<div id="app">
+  <header class="top">
+    <div class="row">
+      <h1 id="title">Stock Room</h1>
+      <div class="stamp">Finale · <b id="stamp">—</b></div>
+    </div>
+  </header>
+  <main>
+    <section class="screen active" id="s-home"></section>
+    <section class="screen" id="s-stock"></section>
+    <section class="screen" id="s-inbound"></section>
+    <section class="screen" id="s-orders"></section>
+    <section class="screen" id="s-lots"></section>
+  </main>
+  <nav class="tabs" aria-label="Screens"><div class="in">
+    <button data-tab="home" class="active"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
+    <button data-tab="stock"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>Stock<span class="badge" id="b-stock" hidden></span></button>
+    <button data-tab="inbound"><svg viewBox="0 0 24 24"><path d="M1 8h14v9H1z"/><path d="M15 11h4l4 3v3h-8"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/></svg>Inbound<span class="badge" id="b-inbound" hidden></span></button>
+    <button data-tab="orders"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Orders<span class="badge" id="b-orders" hidden></span></button>
+    <button data-tab="lots"><svg viewBox="0 0 24 24"><path d="M3 5h3v14H3zM8 5h2v14H8zM12 5h4v14h-4zM18 5h3v14h-3z"/></svg>Lots</button>
+  </div></nav>
+</div>
+
+<script id="data" type="application/json">__DATA__</script>
+<script>
+(function(){
+const D = JSON.parse(document.getElementById('data').textContent);
+const $ = (s, el=document) => el.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt = n => n == null ? '—' : Number(n).toLocaleString('en-US', {maximumFractionDigits: 0});
+const fdate = s => { if (!s) return '—'; const [y,m,d] = s.split('-'); return `${+m}/${+d}`; };
+const fdateY = s => { if (!s) return '—'; const [y,m,d] = s.split('-'); return `${+m}/${+d}/${y.slice(2)}`; };
+const today = D.meta.today;
+const daysFrom = s => s ? Math.round((new Date(today) - new Date(s)) / 86400000) : null;
+
+// ---- stamp: relative time of last pull ----
+(function stamp(){
+  const t = new Date(D.meta.pulledAt);
+  const mins = Math.round((Date.now() - t) / 60000);
+  let rel = mins < 2 ? 'just now' : mins < 60 ? `${mins} min ago` : mins < 1440 ? `${Math.round(mins/60)} h ago` : `${Math.round(mins/1440)} d ago`;
+  const abs = t.toLocaleString('en-US', {month:'numeric', day:'numeric', hour:'numeric', minute:'2-digit'});
+  $('#stamp').textContent = rel; $('#stamp').title = 'Pulled ' + abs;
+})();
+
+// ---- derived ----
+const P = D.products;
+const cases = p => (p.perCase && p.perCase > 1) ? Math.floor(p.onHand / p.perCase) : null;
+const coverClass = p => {
+  if (p.vel <= 0) return '';
+  if (p.onHand <= 0 || p.cover === 0) return 'crit';
+  if (p.cover != null && p.cover <= 14) return 'crit';
+  if (p.cover != null && p.cover <= 30) return 'warn';
+  return 'good';
+};
+const coverText = p => {
+  if (p.vel <= 0) return p.onHand > 0 ? 'no sales 90d' : '—';
+  if (p.onHand <= 0) return 'OUT';
+  if (p.cover == null) return '—';
+  if (p.cover >= 999) return '365+ d';
+  return `${p.cover} d`;
+};
+const isLow = p => p.vel > 0 && (p.onHand <= 0 || (p.cover != null && p.cover <= 30));
+const isOut = p => p.vel > 0 && p.onHand <= 0;
+const lowList = P.filter(isLow).sort((a,b) => (a.onHand<=0?-1:a.cover) - (b.onHand<=0?-1:b.cover) || b.vel - a.vel);
+const outList = P.filter(isOut);
+const inStock = P.filter(p => p.onHand > 0);
+const locNames = [...new Set(P.flatMap(p => Object.keys(p.byLoc)))].sort((a,b) => P.filter(p=>p.byLoc[a]).length < P.filter(p=>p.byLoc[b]).length ? 1 : -1);
+const cats = [...new Set(P.map(p => p.cat))].sort();
+
+const S = D.sales.filter(o => !o.fba);
+const FBA = D.sales.filter(o => o.fba);
+const backorders = S.filter(o => o.eligible === 'Backordered');
+const ready = S.filter(o => o.eligible === 'Eligible');
+const packed = S.filter(o => /packed|shipped/i.test(o.eligible || '') || /Fully packed/.test(o.shipStatus||''));
+const dueSoon = S.filter(o => o.ship && daysFrom(o.ship) >= -7);
+
+const POs = D.pos.slice().sort((a,b) => (a.eta||'9999') < (b.eta||'9999') ? -1 : 1);
+const latePOs = POs.filter(p => p.late > 0);
+const doneOpenPOs = POs.filter(p => p.fullyReceived);
+const T = D.transfers;
+const tInbound = T.filter(t => t.dest === 'BBHQ' && !/received/i.test(t.shipStatus||''));
+const tStale = T.filter(t => /received/i.test(t.shipStatus||''));
+const tMoving = T.filter(t => !/received/i.test(t.shipStatus||'') && t.dest !== 'BBHQ');
+const lotted = P.filter(p => p.lots.length);
+
+// badges
+const badge = (id, n) => { const b = $('#'+id); if (n > 0) { b.textContent = n > 99 ? '99+' : n; b.hidden = false; } };
+badge('b-stock', outList.length);
+badge('b-inbound', latePOs.length);
+badge('b-orders', backorders.length);
+
+// ---- helpers ----
+function toggleRow(li){ li.classList.toggle('open'); li.querySelector('.rowbtn').setAttribute('aria-expanded', li.classList.contains('open')); }
+function bindRows(root){ root.querySelectorAll('.rowbtn').forEach(b => b.addEventListener('click', () => toggleRow(b.closest('li')))); }
+
+function productRow(p, ctx){
+  const cc = coverClass(p), c = cases(p);
+  const locs = Object.entries(p.byLoc).sort((a,b) => b[1]-a[1]);
+  const kv = [];
+  kv.push(`<div class="h">On hand by location</div>`);
+  if (!locs.length) kv.push(`<div class="note">Nothing on hand</div>`);
+  locs.forEach(([l,q]) => kv.push(`<div class="k">${esc(l)}</div><div class="v num">${fmt(q)}</div>`));
+  if (p.lots.length){ kv.push(`<div class="h">Lots</div>`); p.lots.forEach(l => kv.push(`<div class="k">${esc(l.lot)} <span style="color:var(--ink-3)">· ${esc(l.loc)}</span></div><div class="v num">${fmt(l.qty)}</div>`)); }
+  kv.push(`<div class="h">Movement</div>`);
+  kv.push(`<div class="k">Reserved on open orders</div><div class="v num">${fmt(p.reserved)}</div>`);
+  kv.push(`<div class="k">On order (inbound)</div><div class="v num">${fmt(p.onOrder)}</div>`);
+  p.onOrderRows.slice(0,4).forEach(r => kv.push(`<div class="note">↳ ${esc(r.note)}</div>`));
+  kv.push(`<div class="k">Sold last 30 / 90 days</div><div class="v num">${fmt(p.s30)} / ${fmt(p.s90)}</div>`);
+  kv.push(`<div class="k">Velocity</div><div class="v num">${p.vel ? p.vel.toFixed(2) + ' /day' : '—'}</div>`);
+  if (p.perCase) kv.push(`<div class="k">Units per case</div><div class="v num">${fmt(p.perCase)}</div>`);
+  if (p.supplier) kv.push(`<div class="k">Supplier</div><div class="v">${esc(p.supplier)}</div>`);
+  if (p.upc) kv.push(`<div class="k">UPC</div><div class="v num">${esc(p.upc)}</div>`);
+  kv.push(`<div class="k">Category</div><div class="v">${esc(p.cat)}</div>`);
+  const sub = ctx === 'loc' ? '' : (locs.length > 1 ? `${locs.length} locations` : (locs[0] ? esc(locs[0][0]) : ''));
+  return `<li class="stripe ${cc==='crit'||cc==='warn'?cc:''}"><button class="rowbtn" aria-expanded="false">
+    <div><div class="t">${esc(p.desc || p.id)}</div><div class="s num">${esc(p.id)}${sub ? ' · ' + sub : ''}</div></div>
+    <div class="r"><div class="big num">${fmt(p.onHand)}${c != null ? `<small>${fmt(c)} cs</small>` : ''}</div><span class="pill ${cc}">${coverText(p)}</span></div>
+  </button><div class="detail"><div class="kv">${kv.join('')}</div></div></li>`;
+}
+
+function orderRow(o){
+  const el = o.eligible || '';
+  const cls = el === 'Backordered' ? 'crit' : el === 'Incomplete' ? 'warn' : /packed|shipped/i.test(el) ? 'acc' : el === 'Eligible' ? 'good' : '';
+  const label = el === 'Eligible' ? 'Ready to pick' : el === 'Fully packed' ? 'Packed' : el || o.shipStatus;
+  const shipD = o.ship ? daysFrom(o.ship) : null;
+  const shipTxt = o.ship ? (shipD > 0 ? `ship ${fdate(o.ship)} · ${shipD}d late` : shipD === 0 ? 'ships today' : `ship ${fdate(o.ship)}`) : `placed ${fdate(o.date)}`;
+  const kv = [];
+  kv.push(`<div class="k">Order</div><div class="v num">${esc(o.id)}</div>`);
+  if (o.po && o.po !== o.id) kv.push(`<div class="k">Customer PO</div><div class="v num">${esc(o.po)}</div>`);
+  kv.push(`<div class="k">Channel</div><div class="v">${esc(o.source || '—')}</div>`);
+  kv.push(`<div class="k">Ships from</div><div class="v">${esc(o.origin || '—')}</div>`);
+  kv.push(`<div class="k">Placed</div><div class="v num">${fdateY(o.date)} (${o.age}d ago)</div>`);
+  if (o.ship) kv.push(`<div class="k">Requested ship</div><div class="v num">${fdateY(o.ship)}</div>`);
+  if (o.due) kv.push(`<div class="k">Due / cancel</div><div class="v num">${fdateY(o.due)}</div>`);
+  kv.push(`<div class="k">Shipment status</div><div class="v">${esc(o.shipStatus || '—')}</div>`);
+  if (o.lines && o.lines.length){
+    kv.push(`<div class="h">Lines (${o.lines.length})</div>`);
+    o.lines.forEach(l => {
+      const short = l.remaining > 0 && el === 'Backordered';
+      kv.push(`<div class="k">${esc(l.desc || l.id)}<br><span style="color:var(--ink-3);font-size:12px" class="num">${esc(l.id)}</span></div><div class="v num">${fmt(l.ordered)}${l.remaining !== l.ordered ? ` <span style="color:var(--ink-3)">(${fmt(l.remaining)} left)</span>` : ''}</div>`);
+    });
+  }
+  return `<li class="stripe ${cls==='crit'||cls==='warn'?cls:''}"><button class="rowbtn" aria-expanded="false">
+    <div><div class="t">${esc(o.customer || o.source || o.id)}</div><div class="s num">${esc(o.id)} · ${o.items} line${o.items==1?'':'s'} · ${shipTxt}</div></div>
+    <div class="r"><div class="big num">${fmt(o.units)}<small>units</small></div><span class="pill ${cls}">${esc(label)}</span></div>
+  </button><div class="detail"><div class="kv">${kv.join('')}</div></div></li>`;
+}
+
+function poRow(p){
+  const pct = p.ordered ? Math.min(100, Math.round(100 * (p.ordered - p.remaining) / p.ordered)) : 0;
+  const cls = p.fullyReceived ? 'acc' : p.late > 14 ? 'crit' : p.late > 0 ? 'warn' : '';
+  const label = p.fullyReceived ? 'Received · still open' : p.late > 0 ? `${p.late}d late` : p.eta ? `ETA ${fdate(p.eta)}` : 'No ETA';
+  const kv = [];
+  kv.push(`<div class="k">PO</div><div class="v num">${esc(p.id)}</div>`);
+  kv.push(`<div class="k">Supplier</div><div class="v">${esc(p.supplier || '—')}</div>`);
+  kv.push(`<div class="k">Deliver to</div><div class="v">${esc(p.dest || '—')}</div>`);
+  kv.push(`<div class="k">Ordered</div><div class="v num">${fdateY(p.date)} (${p.age}d ago)</div>`);
+  kv.push(`<div class="k">Expected</div><div class="v num">${p.eta ? fdateY(p.eta) : '—'}</div>`);
+  kv.push(`<div class="k">Receiving</div><div class="v">${esc(p.shipStatus || '—')}</div>`);
+  kv.push(`<div class="h">Lines (${(p.lines||[]).length})</div>`);
+  (p.lines||[]).forEach(l => kv.push(`<div class="k">${esc(l.desc || l.id)}<br><span style="color:var(--ink-3);font-size:12px" class="num">${esc(l.id)}</span></div><div class="v num">${fmt(l.received)} / ${fmt(l.ordered)}</div>`));
+  return `<li class="stripe ${cls==='crit'||cls==='warn'?cls:''}"><button class="rowbtn" aria-expanded="false">
+    <div><div class="t">${esc(p.supplier || p.id)}</div><div class="s num">${esc(p.id)} → ${esc(p.dest || '?')}</div><div class="bar ${cls==='acc'?'good':cls}"><i style="width:${pct}%"></i></div></div>
+    <div class="r"><div class="big num">${fmt(p.remaining)}<small>to go</small></div><span class="pill ${cls}">${esc(label)}</span></div>
+  </button><div class="detail"><div class="kv">${kv.join('')}</div></div></li>`;
+}
+
+function transferRow(t){
+  const stale = /received/i.test(t.shipStatus||'');
+  const cls = stale ? '' : /transit|packed/i.test(t.shipStatus||'') ? 'acc' : 'warn';
+  return `<li><button class="rowbtn" aria-expanded="false">
+    <div><div class="t">${esc(t.origin||'?')} → ${esc(t.dest||'?')}</div><div class="s num">${esc(t.id)} · ${fdateY(t.date)} · ${t.age}d</div></div>
+    <div class="r"><div class="big num">${fmt(t.units)}<small>units</small></div><span class="pill ${cls}">${esc(t.shipStatus||'—')}</span></div>
+  </button><div class="detail"><div class="kv"><div class="k">Transfer</div><div class="v num">${esc(t.id)}</div><div class="k">Lines</div><div class="v num">${t.items}</div><div class="k">Status</div><div class="v">${esc(t.shipStatus||'—')}</div><div class="note">${stale ? 'Stock has landed but the transfer is still open in Finale. Closing it clears this list.' : 'In progress.'}</div></div></div></li>`;
+}
+
+function listWithMore(items, renderFn, pageSize=40, ctx){
+  const id = 'l' + Math.random().toString(36).slice(2,8);
+  let shown = Math.min(pageSize, items.length);
+  const html = `<div class="panel"><ul class="list" id="${id}">${items.slice(0, shown).map(x => renderFn(x, ctx)).join('')}</ul>${items.length > shown ? `<button class="more" data-for="${id}">Show ${Math.min(pageSize, items.length - shown)} more of ${items.length}</button>` : ''}${items.length ? '' : '<div class="empty">Nothing here right now</div>'}</div>`;
+  setTimeout(() => {
+    const ul = document.getElementById(id); if (!ul) return;
+    bindRows(ul);
+    const more = ul.parentElement.querySelector('.more');
+    if (more) more.addEventListener('click', () => {
+      const next = items.slice(shown, shown + pageSize); shown += next.length;
+      const frag = document.createElement('div'); frag.innerHTML = next.map(x => renderFn(x, ctx)).join('');
+      [...frag.children].forEach(li => ul.appendChild(li)); bindRows(ul);
+      if (shown >= items.length) more.remove(); else more.textContent = `Show ${Math.min(pageSize, items.length - shown)} more of ${items.length}`;
+    });
+  }, 0);
+  return html;
+}
+
+// ---- HOME ----
+function renderHome(){
+  const el = $('#s-home');
+  const attention = [];
+  outList.slice().sort((a,b)=>b.vel-a.vel).slice(0,8).forEach(p => attention.push({cls:'crit', t: p.desc || p.id, s: `Out of stock · sells ${p.vel.toFixed(1)}/day · ${p.onOrder ? fmt(p.onOrder) + ' on order' : 'nothing on order'}`, tab:'stock', chip:'low'}));
+  latePOs.slice(0,6).forEach(p => attention.push({cls: p.late > 14 ? 'crit' : 'warn', t: `PO ${p.id}`, s: `${p.supplier} · ${p.late}d past ETA · ${fmt(p.remaining)} units still to receive`, tab:'inbound'}));
+  backorders.slice(0,5).forEach(o => attention.push({cls:'warn', t: `${o.customer} · ${o.id}`, s: `Backordered · ${fmt(o.units)} units · ship ${fdate(o.ship)}`, tab:'orders', chip:'back'}));
+  const hyg = [];
+  if (doneOpenPOs.length) hyg.push(`${doneOpenPOs.length} PO${doneOpenPOs.length>1?'s':''} fully received but not closed`);
+  if (tStale.length) hyg.push(`${tStale.length} transfer${tStale.length>1?'s':''} received but still open`);
+  if (D.drafts.sales || D.drafts.purchase) hyg.push(`${D.drafts.sales} draft sale${D.drafts.sales==1?'':'s'}, ${D.drafts.purchase} draft PO${D.drafts.purchase==1?'':'s'}`);
+
+  el.innerHTML = `
+  <div class="tiles">
+    <button class="tile" data-go="stock" data-chip="low"><span class="l">Low cover</span><span class="v num">${lowList.length}</span><span class="d"><span class="dot crit"></span>${outList.length} out · ${lowList.length - outList.length} under 30 days</span></button>
+    <button class="tile" data-go="orders" data-chip="back"><span class="l">Open orders · HQ</span><span class="v num">${S.length}</span><span class="d"><span class="dot ${backorders.length?'crit':'good'}"></span>${backorders.length} backordered · ${ready.length} ready</span></button>
+    <button class="tile" data-go="inbound"><span class="l">Open POs</span><span class="v num">${POs.length}</span><span class="d"><span class="dot ${latePOs.length?'warn':'good'}"></span>${latePOs.length} past ETA · ${fmt(POs.reduce((a,p)=>a+p.remaining,0))} units inbound</span></button>
+    <button class="tile" data-go="stock"><span class="l">SKUs in stock</span><span class="v num">${inStock.length}</span><span class="d"><span class="dot"></span>of ${P.length} active · ${fmt(inStock.reduce((a,p)=>a+p.onHand,0))} units</span></button>
+  </div>
+  <div class="eyebrow">Needs attention<span class="cnt num">${attention.length}</span></div>
+  <div class="panel"><ul class="list">${attention.map(a => `<li class="stripe ${a.cls}"><button class="rowbtn" data-go="${a.tab}" ${a.chip?`data-chip="${a.chip}"`:''}><div><div class="t">${esc(a.t)}</div><div class="s">${esc(a.s)}</div></div><div class="r"><span class="pill ${a.cls}">${a.tab} ›</span></div></button></li>`).join('') || '<div class="empty">All clear</div>'}</ul></div>
+  ${hyg.length ? `<div class="eyebrow">Finale housekeeping</div><div class="panel"><ul class="list">${hyg.map(h => `<li><div class="rowbtn" style="min-height:44px"><div class="t" style="font-weight:400;color:var(--ink-2)">${esc(h)}</div></div></li>`).join('')}</ul></div>` : ''}
+  <div class="eyebrow">Also open</div>
+  <div class="panel"><ul class="list">
+    <li><div class="rowbtn" style="min-height:44px"><div><div class="t">Amazon FBA orders</div><div class="s">Fulfilled by Amazon — not HQ work</div></div><div class="r"><div class="big num">${fmt(FBA.length)}</div></div></div></li>
+    <li><button class="rowbtn" data-go="inbound" style="min-height:44px"><div><div class="t">Transfers in motion</div><div class="s">${tInbound.length} inbound to HQ · ${tMoving.length} outbound</div></div><div class="r"><div class="big num">${fmt(tInbound.length + tMoving.length)}</div></div></button></li>
+  </ul></div>
+  <p class="note">Read-only view of Finale. Pulled ${new Date(D.meta.pulledAt).toLocaleString('en-US',{weekday:'short',month:'short',day:'numeric',hour:'numeric',minute:'2-digit'})} in ${D.meta.seconds}s. Cover = Finale's stockout estimate from 90-day sales velocity; SKUs with no sales in 90 days aren't flagged.</p>`;
+  el.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => go(b.dataset.go, b.dataset.chip)));
+}
+
+// ---- STOCK ----
+let stockState = { q:'', chip:'all', cat:'', loc:'' };
+function renderStock(){
+  const el = $('#s-stock');
+  el.innerHTML = `
+  <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="q" type="search" placeholder="SKU, description or UPC" autocomplete="off" autocorrect="off" spellcheck="false" value="${esc(stockState.q)}"><button id="qx" ${stockState.q?'':'hidden'}>Clear</button></div>
+  <div class="chips" id="stockChips">
+    <button class="chip" data-chip="all">All in stock<span class="n">${inStock.length}</span></button>
+    <button class="chip" data-chip="low">Low cover<span class="n">${lowList.length}</span></button>
+    <button class="chip" data-chip="out">Out<span class="n">${outList.length}</span></button>
+    <button class="chip" data-chip="inbound">Inbound<span class="n">${P.filter(p=>p.onOrder>0).length}</span></button>
+    <button class="chip" data-chip="reserved">Reserved<span class="n">${P.filter(p=>p.reserved>0).length}</span></button>
+    <button class="chip" data-chip="every">Every SKU<span class="n">${P.length}</span></button>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <select class="sel" id="loc"><option value="">Any location</option>${locNames.map(l => `<option value="${esc(l)}" ${stockState.loc===l?'selected':''}>${esc(l)}</option>`).join('')}</select>
+    <select class="sel" id="cat"><option value="">Any category</option>${cats.map(c => `<option value="${esc(c)}" ${stockState.cat===c?'selected':''}>${esc(c)}</option>`).join('')}</select>
+  </div>
+  <div id="stockList"></div>`;
+  const q = $('#q', el), qx = $('#qx', el);
+  q.addEventListener('input', () => { stockState.q = q.value; qx.hidden = !q.value; drawStock(); });
+  qx.addEventListener('click', () => { q.value=''; stockState.q=''; qx.hidden=true; drawStock(); q.focus(); });
+  $('#loc', el).addEventListener('change', e => { stockState.loc = e.target.value; drawStock(); });
+  $('#cat', el).addEventListener('change', e => { stockState.cat = e.target.value; drawStock(); });
+  el.querySelectorAll('#stockChips .chip').forEach(c => c.addEventListener('click', () => { stockState.chip = c.dataset.chip; drawStock(); }));
+  drawStock();
+}
+function drawStock(){
+  const el = $('#s-stock');
+  el.querySelectorAll('#stockChips .chip').forEach(c => c.classList.toggle('active', c.dataset.chip === stockState.chip));
+  let items;
+  switch (stockState.chip){
+    case 'low': items = lowList; break;
+    case 'out': items = outList.slice().sort((a,b)=>b.vel-a.vel); break;
+    case 'inbound': items = P.filter(p=>p.onOrder>0).sort((a,b)=>b.onOrder-a.onOrder); break;
+    case 'reserved': items = P.filter(p=>p.reserved>0).sort((a,b)=>b.reserved-a.reserved); break;
+    case 'every': items = P.slice().sort((a,b)=>(a.desc||'').localeCompare(b.desc||'')); break;
+    default: items = inStock.slice().sort((a,b)=>(a.desc||'').localeCompare(b.desc||''));
+  }
+  if (stockState.loc) items = items.filter(p => p.byLoc[stockState.loc] > 0).map(p => Object.assign({}, p, {onHand: p.byLoc[stockState.loc]}));
+  if (stockState.cat) items = items.filter(p => p.cat === stockState.cat);
+  const q = stockState.q.trim().toLowerCase();
+  if (q){
+    const terms = q.split(/\s+/);
+    items = (stockState.chip === 'all' && !stockState.loc ? P : items).filter(p => { const hay = `${p.id} ${p.desc||''} ${p.upc||''} ${p.cat}`.toLowerCase(); return terms.every(t => hay.includes(t)); });
+  }
+  const head = `<div class="eyebrow">${stockState.loc ? esc(stockState.loc) + ' · ' : ''}${q ? 'Search results' : ({all:'In stock',low:'Low cover — sells, ≤30 days left',out:'Out of stock — still selling',inbound:'On order',reserved:'Reserved on open orders',every:'All active SKUs'})[stockState.chip]}<span class="cnt num">${items.length}</span></div>`;
+  $('#stockList', el).innerHTML = head + listWithMore(items, productRow, 40, stockState.loc ? 'loc' : '');
+}
+
+// ---- INBOUND ----
+function renderInbound(){
+  const el = $('#s-inbound');
+  const late = POs.filter(p=>p.late>0), onTime = POs.filter(p=>!p.late && !p.fullyReceived);
+  el.innerHTML = `
+  ${late.length ? `<div class="eyebrow">Past expected date<span class="cnt num">${late.length}</span></div>${listWithMore(late, poRow)}` : ''}
+  <div class="eyebrow">Purchase orders on the way<span class="cnt num">${onTime.length}</span></div>${listWithMore(onTime, poRow)}
+  ${doneOpenPOs.length ? `<div class="eyebrow">Received, still open<span class="cnt num">${doneOpenPOs.length}</span></div>${listWithMore(doneOpenPOs, poRow)}<p class="note">Stock is in. These just need to be marked complete in Finale.</p>` : ''}
+  ${tInbound.length ? `<div class="eyebrow">Transfers inbound to HQ<span class="cnt num">${tInbound.length}</span></div>${listWithMore(tInbound, transferRow)}` : ''}
+  ${tMoving.length ? `<div class="eyebrow">Transfers outbound<span class="cnt num">${tMoving.length}</span></div>${listWithMore(tMoving, transferRow)}` : ''}
+  ${tStale.length ? `<div class="eyebrow">Transfers received, still open<span class="cnt num">${tStale.length}</span></div>${listWithMore(tStale, transferRow, 20)}` : ''}`;
+}
+
+// ---- ORDERS ----
+let orderChip = 'all';
+function renderOrders(){
+  const el = $('#s-orders');
+  const sources = [...new Set(S.map(o => o.source || 'Unknown'))];
+  const byOrigin = [...new Set(S.map(o => o.origin || '?'))];
+  el.innerHTML = `
+  <div class="chips" id="orderChips">
+    <button class="chip" data-chip="all">All<span class="n">${S.length}</span></button>
+    <button class="chip" data-chip="back">Backordered<span class="n">${backorders.length}</span></button>
+    <button class="chip" data-chip="ready">Ready to pick<span class="n">${ready.length}</span></button>
+    <button class="chip" data-chip="packed">Packed<span class="n">${packed.length}</span></button>
+    <button class="chip" data-chip="week">Ships this week<span class="n">${S.filter(o=>o.ship && daysFrom(o.ship) >= -7 && daysFrom(o.ship) <= 0).length}</span></button>
+    ${byOrigin.filter(x=>x!=='BBHQ').map(o => `<button class="chip" data-chip="o:${esc(o)}">${esc(o)}<span class="n">${S.filter(x=>x.origin===o).length}</span></button>`).join('')}
+  </div>
+  <select class="sel" id="src"><option value="">Every channel</option>${sources.map(s => `<option value="${esc(s)}">${esc(s)} (${S.filter(o=>(o.source||'Unknown')===s).length})</option>`).join('')}</select>
+  <div id="orderList"></div>`;
+  el.querySelectorAll('#orderChips .chip').forEach(c => c.addEventListener('click', () => { orderChip = c.dataset.chip; drawOrders(); }));
+  $('#src', el).addEventListener('change', drawOrders);
+  drawOrders();
+}
+function drawOrders(){
+  const el = $('#s-orders');
+  el.querySelectorAll('#orderChips .chip').forEach(c => c.classList.toggle('active', c.dataset.chip === orderChip));
+  let items = S;
+  if (orderChip === 'back') items = backorders;
+  else if (orderChip === 'ready') items = ready;
+  else if (orderChip === 'packed') items = packed;
+  else if (orderChip === 'week') items = S.filter(o=>o.ship && daysFrom(o.ship) >= -7 && daysFrom(o.ship) <= 0);
+  else if (orderChip.startsWith('o:')) items = S.filter(o => o.origin === orderChip.slice(2));
+  const src = $('#src', el).value; if (src) items = items.filter(o => (o.source||'Unknown') === src);
+  items = items.slice().sort((a,b) => (a.ship||'9999') < (b.ship||'9999') ? -1 : (a.ship||'9999') > (b.ship||'9999') ? 1 : a.date < b.date ? -1 : 1);
+  const units = items.reduce((a,o)=>a+o.units,0);
+  $('#orderList', el).innerHTML = `<div class="eyebrow">Sorted by ship date<span class="cnt num">${items.length} orders · ${fmt(units)} units</span></div>` + listWithMore(items, orderRow) +
+    `<p class="note">${FBA.length} Amazon FBA orders are open but fulfilled by Amazon, so they're left out here. "Ready to pick" is Finale's eligible-to-ship flag; backordered means at least one line can't be filled from current stock.</p>`;
+}
+
+// ---- LOTS ----
+function renderLots(){
+  const el = $('#s-lots');
+  const rows = lotted.slice().sort((a,b)=>(a.desc||'').localeCompare(b.desc||''));
+  const lotRow = p => {
+    const total = p.lots.reduce((a,l)=>a+l.qty,0);
+    const unlotted = p.onHand - total;
+    return `<li><button class="rowbtn" aria-expanded="false"><div><div class="t">${esc(p.desc||p.id)}</div><div class="s num">${esc(p.id)} · ${p.lots.length} lot${p.lots.length>1?'s':''}${unlotted>0?` · ${fmt(unlotted)} units without a lot`:''}</div></div><div class="r"><div class="big num">${fmt(p.onHand)}</div><span class="pill ${unlotted>0?'warn':'good'}">${unlotted>0?'partly lotted':'fully lotted'}</span></div></button>
+    <div class="detail"><div class="lotgrid"><div class="hd">Lot</div><div class="hd">Location</div><div class="hd q">Units</div>${p.lots.map(l=>`<div class="num">${esc(l.lot)}</div><div style="color:var(--ink-2)">${esc(l.loc)}</div><div class="q num">${fmt(l.qty)}</div>`).join('')}</div></div></li>`;
+  };
+  el.innerHTML = `
+  <div class="tiles" style="grid-template-columns:1fr 1fr">
+    <div class="tile"><span class="l">SKUs carrying lots</span><span class="v num">${lotted.length}</span><span class="d">of ${inStock.length} in stock</span></div>
+    <div class="tile"><span class="l">Units under a lot</span><span class="v num">${fmt(lotted.reduce((a,p)=>a+p.lots.reduce((x,l)=>x+l.qty,0),0))}</span><span class="d">of ${fmt(inStock.reduce((a,p)=>a+p.onHand,0))} on hand</span></div>
+  </div>
+  <div class="eyebrow">Lotted stock<span class="cnt num">${rows.length}</span></div>
+  ${listWithMore(rows, lotRow)}
+  <p class="note">Finale has lot tracking on, but only these SKUs have lot IDs recorded, and the IDs don't carry a best-by date. Expiry can't be tracked from Finale until lots are entered at receiving with a date in the lot ID or a custom field.</p>`;
+}
+
+// ---- nav ----
+const rendered = {};
+const renderers = { home: renderHome, stock: renderStock, inbound: renderInbound, orders: renderOrders, lots: renderLots };
+function go(tab, chip){
+  document.querySelectorAll('section.screen').forEach(s => s.classList.toggle('active', s.id === 's-' + tab));
+  document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  if (chip && tab === 'stock') stockState.chip = chip;
+  if (chip && tab === 'orders') orderChip = chip;
+  if (!rendered[tab]) { renderers[tab](); rendered[tab] = true; }
+  else if (chip && tab === 'stock') drawStock();
+  else if (chip && tab === 'orders') drawOrders();
+  window.scrollTo(0, 0);
+  try { localStorage.setItem('bb-tab', tab); } catch(e){}
+}
+document.querySelectorAll('nav.tabs button').forEach(b => b.addEventListener('click', () => go(b.dataset.tab)));
+let start = 'home';
+try { const s = localStorage.getItem('bb-tab'); if (s && renderers[s]) start = s; } catch(e){}
+go(start);
+})();
+</script>
