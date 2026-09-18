@@ -268,7 +268,6 @@ function fbaBuckets(p){
   }
   return { full, inb, stuck };
 }
-const fbaAll = P.filter(p => Object.keys(p.byLoc).some(l => l.includes('Amazon'))).map(p => Object.assign({}, p, { fbaB: fbaBuckets(p) }));
 const fbaCover = p => p.vel > 0 ? Math.round(p.fbaB.full / p.vel) : null;
 const fbaCoverClass = p => {
   if (p.vel <= 0) return '';
@@ -278,13 +277,27 @@ const fbaCoverClass = p => {
   if (c <= 30) return 'warn';
   return 'good';
 };
+// Suggested units to ship to Amazon: enough to reach a target days-of-cover at Amazon, net of
+// what's already fulfillable/inbound there, capped by what's actually on hand elsewhere to send.
+const FBA_TARGET_DAYS = 45;
+function fbaShipInfo(p){
+  const warehouse = Math.max(0, p.onHand - p.fbaB.full - p.fbaB.inb - p.fbaB.stuck);
+  const target = p.vel > 0 ? Math.round(p.vel * FBA_TARGET_DAYS) : 0;
+  const need = Math.max(0, target - p.fbaB.full - p.fbaB.inb);
+  const ship = Math.min(need, warehouse);
+  return { warehouse, target, need, ship, cover: fbaCover(p) };
+}
+const fbaAll = P.filter(p => Object.keys(p.byLoc).some(l => l.includes('Amazon'))).map(p => {
+  const withB = Object.assign({}, p, { fbaB: fbaBuckets(p) });
+  return Object.assign(withB, { fba: fbaShipInfo(withB) });
+});
 const fbaAtRisk = fbaAll.filter(p => p.vel > 0 && (p.fbaB.full <= 0 || fbaCover(p) <= 30)).sort((a,b) => {
   const av = a.fbaB.full <= 0 ? -1 : fbaCover(a), bv = b.fbaB.full <= 0 ? -1 : fbaCover(b);
   return av - bv || b.vel - a.vel;
 });
 const fbaUrgent = fbaAll.filter(p => p.vel > 0 && p.fbaB.full <= 0 && p.fbaB.inb <= 0);
 const fbaStuckList = fbaAll.filter(p => p.fbaB.stuck > 0).sort((a,b) => b.fbaB.stuck - a.fbaB.stuck);
-const fbaTotals = fbaAll.reduce((a,p) => ({ full: a.full+p.fbaB.full, inb: a.inb+p.fbaB.inb, stuck: a.stuck+p.fbaB.stuck }), {full:0, inb:0, stuck:0});
+const fbaTotals = fbaAll.reduce((a,p) => ({ full: a.full+p.fbaB.full, inb: a.inb+p.fbaB.inb, stuck: a.stuck+p.fbaB.stuck, ship: a.ship+p.fba.ship }), {full:0, inb:0, stuck:0, ship:0});
 
 // ---- Buy / reorder suggestions ----
 // pipeline = what's already on hand or inbound, net of what's already promised to open sales orders.
@@ -742,24 +755,36 @@ function renderLots(){
 }
 
 // ---- FBA ----
-function fbaRow(p){
+const FBA_SORTS = {
+  auto: ['Urgency (default)', null],
+  ship_desc: ['Suggested to ship (high–low)', (a,b) => b.fba.ship - a.fba.ship],
+  cover_asc: ['Days of Amazon cover (soonest out)', (a,b) => (a.fba.cover ?? -1) - (b.fba.cover ?? -1)],
+  stuck_desc: ['Stuck units (high–low)', (a,b) => b.fbaB.stuck - a.fbaB.stuck],
+  desc_az: ['Description (A–Z)', (a,b) => (a.desc||'').localeCompare(b.desc||'')],
+  id_asc: ['SKU (low–high)', (a,b) => idCompare(a.id, b.id)],
+};
+let fbaState = { chip: 'risk', q: '', sort: 'auto' };
+function fbaRow(p, view){
   const cc = fbaCoverClass(p);
-  const cover = fbaCover(p);
+  const cover = p.fba.cover;
   const coverTxt = p.vel <= 0 ? '—' : p.fbaB.full <= 0 ? (p.fbaB.inb > 0 ? 'out · inbound' : 'OUT') : cover >= 999 ? '365+ d' : `${fmt(cover)} d`;
-  const warehouse = Math.max(0, p.onHand - p.fbaB.full - p.fbaB.inb - p.fbaB.stuck);
-  const target = p.vel > 0 ? Math.round(p.vel * 45) : 0;
-  const need = Math.max(0, target - p.fbaB.full - p.fbaB.inb);
-  const ship = Math.min(need, warehouse);
   const kv = [];
   kv.push(`<div class="k">Fulfillable at Amazon</div><div class="v num">${fmt(p.fbaB.full)}</div>`);
   kv.push(`<div class="k">Inbound to Amazon</div><div class="v num">${fmt(p.fbaB.inb)}</div>`);
   if (p.fbaB.stuck) kv.push(`<div class="k">Stuck (unfulfillable / researching)</div><div class="v num">${fmt(p.fbaB.stuck)}</div>`);
-  kv.push(`<div class="k">Available at HQ / other locations</div><div class="v num">${fmt(warehouse)}</div>`);
+  kv.push(`<div class="k">Available at HQ / other locations</div><div class="v num">${fmt(p.fba.warehouse)}</div>`);
   kv.push(`<div class="k">Velocity (all channels)</div><div class="v num">${p.vel ? p.vel.toFixed(2) + ' /day' : '—'}</div>`);
-  if (need > 0) kv.push(`<div class="note">To reach ~45 days of Amazon cover: ship ${fmt(ship)}${ship < need ? ` (would need ${fmt(need)}; only ${fmt(warehouse)} on hand elsewhere)` : ''}.</div>`);
+  if (p.supplier) kv.push(`<div class="k">Supplier</div><div class="v">${esc(p.supplier)}</div>`);
+  if (p.fba.need > 0){
+    kv.push(`<div class="h">Suggested</div>`);
+    kv.push(`<div class="k">Target (${FBA_TARGET_DAYS}d Amazon cover)</div><div class="v num">${fmt(p.fba.target)}</div>`);
+    kv.push(`<div class="note">Ship ~${fmt(p.fba.ship)} units from HQ/other locations to Amazon.${p.fba.ship < p.fba.need ? ` Would need ${fmt(p.fba.need)} to fully reach target; only ${fmt(p.fba.warehouse)} on hand elsewhere — check the Buy tab for whether to reorder from ${esc(p.supplier || 'the supplier')} first.` : ''}</div>`);
+  }
+  const big = view === 'stuck' ? `${fmt(p.fbaB.stuck)}<small>stuck</small>` : `${fmt(p.fba.ship)}<small>to ship</small>`;
+  const pill = view === 'stuck' ? `<span class="pill warn">stuck</span>` : `<span class="pill ${cc}">${coverTxt}</span>`;
   return `<li class="stripe ${cc==='crit'||cc==='warn'?cc:''}"><button class="rowbtn" aria-expanded="false">
-    <div><div class="t">${esc(p.desc || p.id)}</div><div class="s num">${esc(p.id)} · ${fmt(p.fbaB.inb)} inbound</div></div>
-    <div class="r"><div class="big num">${fmt(p.fbaB.full)}<small>fulfillable</small></div><span class="pill ${cc}">${coverTxt}</span></div>
+    <div><div class="t">${esc(p.desc || p.id)}</div><div class="s num">${esc(p.id)} · ${fmt(p.fbaB.full)} fulfillable · ${fmt(p.fbaB.inb)} inbound</div></div>
+    <div class="r"><div class="big num">${big}</div>${pill}</div>
   </button><div class="detail"><div class="kv">${kv.join('')}</div></div></li>`;
 }
 function renderFBA(){
@@ -767,12 +792,44 @@ function renderFBA(){
   el.innerHTML = `
   <div class="tiles" style="grid-template-columns:1fr 1fr">
     <div class="tile"><span class="l">Fulfillable at Amazon</span><span class="v num">${fmt(fbaTotals.full)}</span><span class="d">across ${fmt(fbaAll.length)} SKUs on Amazon</span></div>
-    <div class="tile"><span class="l">Inbound to Amazon</span><span class="v num">${fmt(fbaTotals.inb)}</span><span class="d">already moving</span></div>
+    <div class="tile"><span class="l">Suggested to ship</span><span class="v num">${fmt(fbaTotals.ship)}</span><span class="d"><span class="dot ${fbaUrgent.length?'crit':'good'}"></span>${fbaUrgent.length} urgent · ${fmt(fbaTotals.inb)} already inbound</span></div>
   </div>
-  <div class="eyebrow">Needs restock at Amazon<span class="cnt num">${fbaAtRisk.length}</span></div>
-  ${listWithMore(fbaAtRisk, fbaRow, 40)}
-  ${fbaTotals.stuck ? `<div class="eyebrow">Stuck inventory<span class="cnt num">${fmt(fbaTotals.stuck)} units</span></div>${listWithMore(fbaStuckList, fbaRow, 20)}<p class="note">Sitting in Unfulfillable / Researching / Problem at Amazon — tied up and not sellable until it's worked in Seller Central.</p>` : ''}
-  <p class="note">Fulfillable = sellable right now at Amazon; cover uses the same blended, all-channel sales velocity as the rest of this dashboard (Finale doesn't split velocity by channel), so treat it as a first pass, not an exact Amazon-only rate. The restock suggestion targets ~45 days of Amazon cover and is capped by what's actually on hand outside Amazon.</p>`;
+  <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="fq" type="search" placeholder="SKU or description" autocomplete="off" autocorrect="off" spellcheck="false" value="${esc(fbaState.q)}"><button id="fqx" ${fbaState.q?'':'hidden'}>Clear</button></div>
+  <div class="chips" id="fbaChips">
+    <button class="chip" data-chip="risk">Needs restock<span class="n">${fbaAtRisk.length}</span></button>
+    <button class="chip" data-chip="urgent">Urgent<span class="n">${fbaUrgent.length}</span></button>
+    <button class="chip" data-chip="stuck">Stuck<span class="n">${fbaStuckList.length}</span></button>
+    <button class="chip" data-chip="all">All on Amazon<span class="n">${fbaAll.length}</span></button>
+  </div>
+  ${sortSelectHTML('fsort', Object.entries(FBA_SORTS).map(([k,v])=>[k,v[0]]), fbaState.sort)}
+  <div id="fbaList"></div>
+  <p class="note">Fulfillable = sellable right now at Amazon; cover uses the same blended, all-channel sales velocity as the rest of this dashboard (Finale doesn't split velocity by channel), so treat it as a first pass, not an exact Amazon-only rate. The ship suggestion targets ~${FBA_TARGET_DAYS} days of Amazon cover and is capped by what's actually on hand outside Amazon — it doesn't know Amazon's restock limits or storage fees.</p>`;
+  const q = $('#fq', el), qx = $('#fqx', el);
+  q.addEventListener('input', () => { fbaState.q = q.value; qx.hidden = !q.value; drawFBA(); });
+  qx.addEventListener('click', () => { q.value=''; fbaState.q=''; qx.hidden=true; drawFBA(); q.focus(); });
+  el.querySelectorAll('#fbaChips .chip').forEach(c => c.addEventListener('click', () => { fbaState.chip = c.dataset.chip; drawFBA(); }));
+  $('#fsort', el).addEventListener('change', e => { fbaState.sort = e.target.value; drawFBA(); });
+  drawFBA();
+}
+function drawFBA(){
+  const el = $('#s-fba');
+  el.querySelectorAll('#fbaChips .chip').forEach(c => c.classList.toggle('active', c.dataset.chip === fbaState.chip));
+  const view = fbaState.chip === 'stuck' ? 'stuck' : 'risk';
+  let items = { risk: fbaAtRisk, urgent: fbaUrgent, stuck: fbaStuckList, all: fbaAll }[fbaState.chip] || fbaAtRisk;
+  const q = fbaState.q.trim().toLowerCase();
+  if (q){ const terms = q.split(/\s+/); items = items.filter(p => { const hay = `${p.id} ${p.desc||''}`.toLowerCase(); return terms.every(t => hay.includes(t)); }); }
+  const sortFn = FBA_SORTS[fbaState.sort][1];
+  if (sortFn) items = items.slice().sort(sortFn);
+  const label = {risk:'Needs restock at Amazon', urgent:'Urgent — out at Amazon, nothing inbound', stuck:'Stuck inventory', all:'All SKUs on Amazon'}[fbaState.chip];
+  const head = `<div class="toolbar"><div class="eyebrow">${label}<span class="cnt num">${items.length}</span></div>${exportBtn('fbaExport', 'Export CSV')}</div>`;
+  $('#fbaList', el).innerHTML = head + listWithMore(items, p => fbaRow(p, view), 40) +
+    (fbaState.chip === 'stuck' ? `<p class="note">Sitting in Unfulfillable / Researching / Problem at Amazon — tied up and not sellable until it's worked in Seller Central.</p>` : '');
+  const xb = document.getElementById('fbaExport');
+  if (xb) xb.addEventListener('click', () => exportCSV('amazon-fba.csv', items, [
+    ['SKU', p=>p.id], ['Description', p=>p.desc], ['Supplier', p=>p.supplier], ['Fulfillable', p=>p.fbaB.full],
+    ['Inbound to Amazon', p=>p.fbaB.inb], ['Stuck', p=>p.fbaB.stuck], ['Available elsewhere', p=>p.fba.warehouse],
+    ['Velocity/day', p=>p.vel], ['Amazon cover (d)', p=>p.fba.cover], ['Suggested to ship', p=>p.fba.ship],
+  ]));
 }
 
 // ---- nav ----
@@ -784,10 +841,12 @@ function go(tab, chip){
   if (chip && tab === 'stock') stockState.chip = chip;
   if (chip && tab === 'orders') orderState.chip = chip;
   if (chip && tab === 'buy') buyState.chip = chip;
+  if (chip && tab === 'fba') fbaState.chip = chip;
   if (!rendered[tab]) { renderers[tab](); rendered[tab] = true; }
   else if (chip && tab === 'stock') drawStock();
   else if (chip && tab === 'orders') drawOrders();
   else if (chip && tab === 'buy') drawBuy();
+  else if (chip && tab === 'fba') drawFBA();
   window.scrollTo(0, 0);
   try { localStorage.setItem('bb-tab', tab); } catch(e){}
 }
