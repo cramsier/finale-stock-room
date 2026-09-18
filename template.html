@@ -59,8 +59,8 @@ section.screen{display:none}
 section.screen.active{display:block}
 
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--tab-bg);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
-nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(6,1fr);gap:2px}
-nav.tabs button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px 4px;border-radius:10px;color:var(--ink-3);font-family:"Barlow Condensed",sans-serif;font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;position:relative}
+nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+nav.tabs button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 1px 4px;border-radius:10px;color:var(--ink-3);font-family:"Barlow Condensed",sans-serif;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;position:relative}
 nav.tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 nav.tabs button.active{color:var(--accent)}
 nav.tabs button .badge{position:absolute;top:2px;right:calc(50% - 22px);min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--crit);color:#fff;font-size:10.5px;line-height:16px;font-family:"Barlow",sans-serif;font-weight:600}
@@ -107,6 +107,11 @@ li.open .detail{display:block}
 .search button{color:var(--ink-3);padding:6px;font-size:13px}
 select.sel{width:100%;appearance:none;-webkit-appearance:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:15px;margin-bottom:8px}
 .more{width:100%;padding:12px;text-align:center;color:var(--accent);font-weight:600;font-size:14px;border-top:1px solid var(--line-soft)}
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:18px 4px 8px;flex-wrap:wrap}
+.toolbar .eyebrow{margin:0}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);font-size:12.5px;font-weight:600;letter-spacing:.02em}
+.btn.acc{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
 
 /* ---- home ---- */
 .tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
@@ -138,6 +143,7 @@ select.sel{width:100%;appearance:none;-webkit-appearance:none;background:var(--s
   <main>
     <section class="screen active" id="s-home"></section>
     <section class="screen" id="s-stock"></section>
+    <section class="screen" id="s-buy"></section>
     <section class="screen" id="s-inbound"></section>
     <section class="screen" id="s-orders"></section>
     <section class="screen" id="s-lots"></section>
@@ -146,6 +152,7 @@ select.sel{width:100%;appearance:none;-webkit-appearance:none;background:var(--s
   <nav class="tabs" aria-label="Screens"><div class="in">
     <button data-tab="home" class="active"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
     <button data-tab="stock"><svg viewBox="0 0 24 24"><path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>Stock<span class="badge" id="b-stock" hidden></span></button>
+    <button data-tab="buy"><svg viewBox="0 0 24 24"><circle cx="9" cy="21" r="1.3"/><circle cx="18" cy="21" r="1.3"/><path d="M2 3h2l2.4 12.2a2 2 0 0 0 2 1.6h8.2a2 2 0 0 0 2-1.6L21 7H6"/></svg>Buy<span class="badge" id="b-buy" hidden></span></button>
     <button data-tab="inbound"><svg viewBox="0 0 24 24"><path d="M1 8h14v9H1z"/><path d="M15 11h4l4 3v3h-8"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/></svg>Inbound<span class="badge" id="b-inbound" hidden></span></button>
     <button data-tab="orders"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Orders<span class="badge" id="b-orders" hidden></span></button>
     <button data-tab="lots"><svg viewBox="0 0 24 24"><path d="M3 5h3v14H3zM8 5h2v14H8zM12 5h4v14h-4zM18 5h3v14h-3z"/></svg>Lots</button>
@@ -164,6 +171,23 @@ const fdate = s => { if (!s) return '—'; const [y,m,d] = s.split('-'); return 
 const fdateY = s => { if (!s) return '—'; const [y,m,d] = s.split('-'); return `${+m}/${+d}/${y.slice(2)}`; };
 const today = D.meta.today;
 const daysFrom = s => s ? Math.round((new Date(today) - new Date(s)) / 86400000) : null;
+
+// ---- CSV export (client-side only; nothing leaves the device) ----
+function toCSVCell(v){
+  const s = v == null ? '' : String(v);
+  return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+function exportCSV(filename, rows, cols){
+  const head = cols.map(c => toCSVCell(c[0])).join(',');
+  const body = rows.map(r => cols.map(c => toCSVCell(c[1](r))).join(',')).join('\n');
+  const blob = new Blob([head + '\n' + body], {type: 'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click();
+  a.remove(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function exportBtn(id, label){ return `<button class="btn acc" id="${id}"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>${esc(label)}</button>`;
+}
 
 // ---- stamp: relative time of last pull ----
 (function stamp(){
@@ -247,9 +271,44 @@ const fbaUrgent = fbaAll.filter(p => p.vel > 0 && p.fbaB.full <= 0 && p.fbaB.inb
 const fbaStuckList = fbaAll.filter(p => p.fbaB.stuck > 0).sort((a,b) => b.fbaB.stuck - a.fbaB.stuck);
 const fbaTotals = fbaAll.reduce((a,p) => ({ full: a.full+p.fbaB.full, inb: a.inb+p.fbaB.inb, stuck: a.stuck+p.fbaB.stuck }), {full:0, inb:0, stuck:0});
 
+// ---- Buy / reorder suggestions ----
+// pipeline = what's already on hand or inbound, net of what's already promised to open sales orders.
+// target = enough units to survive lead time + a 14-day safety buffer at current velocity (or the
+// reorder point Finale already has configured, for slow movers with no reliable velocity).
+const BUY_BUFFER_DAYS = 14;
+function buyInfo(p){
+  const pipeline = p.onHand + p.onOrder - p.reserved;
+  const lead = p.lead || 30;
+  const target = p.vel > 0 ? Math.ceil(p.vel * (lead + BUY_BUFFER_DAYS)) : (p.reorderPt || 0);
+  const suggested = Math.max(0, target - pipeline);
+  const coverDays = p.vel > 0 ? Math.round(pipeline / p.vel) : null;
+  const urgent = p.onHand <= 0 || (coverDays != null && coverDays <= lead);
+  return { pipeline, lead, target, suggested, coverDays, urgent };
+}
+const buyList = P.filter(p => p.vel > 0 || (p.reorderPt != null && p.onHand <= p.reorderPt))
+  .map(p => Object.assign({}, p, { buy: buyInfo(p) }))
+  .filter(p => p.buy.suggested > 0)
+  .sort((a,b) => (a.buy.urgent === b.buy.urgent ? 0 : a.buy.urgent ? -1 : 1) || (a.buy.coverDays ?? -1) - (b.buy.coverDays ?? -1) || b.buy.suggested - a.buy.suggested);
+const buyUrgent = buyList.filter(p => p.buy.urgent);
+const buySuppliers = (() => {
+  const m = new Map();
+  buyList.forEach(p => {
+    const key = p.supplier || 'No supplier on file';
+    if (!m.has(key)) m.set(key, { name: key, items: [], units: 0, urgent: 0 });
+    const s = m.get(key); s.items.push(p); s.units += p.buy.suggested; if (p.buy.urgent) s.urgent++;
+  });
+  const openBySupplier = new Map();
+  POs.forEach(po => { const k = po.supplier || 'No supplier on file'; if (!openBySupplier.has(k)) openBySupplier.set(k, []); openBySupplier.get(k).push(po); });
+  return [...m.values()].map(s => {
+    const open = openBySupplier.get(s.name) || [];
+    return Object.assign(s, { openPOs: open.length, latePOs: open.filter(p=>p.late>0).length, nextEta: open.map(p=>p.eta).filter(Boolean).sort()[0] || null });
+  }).sort((a,b) => b.urgent - a.urgent || b.units - a.units);
+})();
+
 // badges
 const badge = (id, n) => { const b = $('#'+id); if (n > 0) { b.textContent = n > 99 ? '99+' : n; b.hidden = false; } };
 badge('b-stock', outList.length);
+badge('b-buy', buyUrgent.length);
 badge('b-inbound', latePOs.length);
 badge('b-orders', backorders.length);
 badge('b-fba', fbaUrgent.length);
@@ -374,7 +433,7 @@ function renderHome(){
     <button class="tile" data-go="stock" data-chip="low"><span class="l">Low cover</span><span class="v num">${lowList.length}</span><span class="d"><span class="dot crit"></span>${outList.length} out · ${lowList.length - outList.length} under 30 days</span></button>
     <button class="tile" data-go="orders" data-chip="back"><span class="l">Open orders · HQ</span><span class="v num">${S.length}</span><span class="d"><span class="dot ${backorders.length?'crit':'good'}"></span>${backorders.length} backordered · ${ready.length} ready</span></button>
     <button class="tile" data-go="inbound"><span class="l">Open POs</span><span class="v num">${POs.length}</span><span class="d"><span class="dot ${latePOs.length?'warn':'good'}"></span>${latePOs.length} past ETA · ${fmt(POs.reduce((a,p)=>a+p.remaining,0))} units inbound</span></button>
-    <button class="tile" data-go="stock"><span class="l">SKUs in stock</span><span class="v num">${inStock.length}</span><span class="d"><span class="dot"></span>of ${P.length} active · ${fmt(inStock.reduce((a,p)=>a+p.onHand,0))} units</span></button>
+    <button class="tile" data-go="buy" data-chip="urgent"><span class="l">Needs reorder</span><span class="v num">${buyList.length}</span><span class="d"><span class="dot ${buyUrgent.length?'crit':'good'}"></span>${buyUrgent.length} urgent · ${fmt(buyList.reduce((a,p)=>a+p.buy.suggested,0))} units</span></button>
   </div>
   <div class="eyebrow">Needs attention<span class="cnt num">${attention.length}</span></div>
   <div class="panel"><ul class="list">${attention.map(a => `<li class="stripe ${a.cls}"><button class="rowbtn" data-go="${a.tab}" ${a.chip?`data-chip="${a.chip}"`:''}><div><div class="t">${esc(a.t)}</div><div class="s">${esc(a.s)}</div></div><div class="r"><span class="pill ${a.cls}">${a.tab} ›</span></div></button></li>`).join('') || '<div class="empty">All clear</div>'}</ul></div>
@@ -434,30 +493,128 @@ function drawStock(){
     const terms = q.split(/\s+/);
     items = (stockState.chip === 'all' && !stockState.loc ? P : items).filter(p => { const hay = `${p.id} ${p.desc||''} ${p.upc||''} ${p.cat}`.toLowerCase(); return terms.every(t => hay.includes(t)); });
   }
-  const head = `<div class="eyebrow">${stockState.loc ? esc(stockState.loc) + ' · ' : ''}${q ? 'Search results' : ({all:'In stock',low:'Low cover — sells, ≤30 days left',out:'Out of stock — still selling',inbound:'On order',reserved:'Reserved on open orders',every:'All active SKUs'})[stockState.chip]}<span class="cnt num">${items.length}</span></div>`;
+  const head = `<div class="toolbar"><div class="eyebrow">${stockState.loc ? esc(stockState.loc) + ' · ' : ''}${q ? 'Search results' : ({all:'In stock',low:'Low cover — sells, ≤30 days left',out:'Out of stock — still selling',inbound:'On order',reserved:'Reserved on open orders',every:'All active SKUs'})[stockState.chip]}<span class="cnt num">${items.length}</span></div>${exportBtn('stockExport', 'Export CSV')}</div>`;
   $('#stockList', el).innerHTML = head + listWithMore(items, productRow, 40, stockState.loc ? 'loc' : '');
+  const xb = document.getElementById('stockExport');
+  if (xb) xb.addEventListener('click', () => exportCSV('stock.csv', items, [
+    ['SKU', p=>p.id], ['Description', p=>p.desc], ['Category', p=>p.cat], ['Supplier', p=>p.supplier],
+    ['On hand', p=>p.onHand], ['Cover', p=>coverText(p)], ['On order', p=>p.onOrder], ['Reserved', p=>p.reserved],
+    ['Sold 30d', p=>p.s30], ['Sold 90d', p=>p.s90], ['Velocity/day', p=>p.vel], ['UPC', p=>p.upc],
+  ]));
+}
+
+// ---- BUY (reorder suggestions) ----
+let buyState = { chip: 'urgent', q: '', supplier: '' };
+function buyRow(p){
+  const cc = p.buy.urgent ? 'crit' : 'warn';
+  const coverTxt = p.buy.coverDays == null ? '—' : p.buy.coverDays >= 999 ? '365+ d' : `${fmt(p.buy.coverDays)} d`;
+  const kv = [];
+  kv.push(`<div class="k">On hand</div><div class="v num">${fmt(p.onHand)}</div>`);
+  kv.push(`<div class="k">On order (inbound)</div><div class="v num">${fmt(p.onOrder)}</div>`);
+  kv.push(`<div class="k">Reserved on open orders</div><div class="v num">${fmt(p.reserved)}</div>`);
+  kv.push(`<div class="k">Net pipeline</div><div class="v num">${fmt(p.buy.pipeline)}</div>`);
+  kv.push(`<div class="k">Velocity</div><div class="v num">${p.vel ? p.vel.toFixed(2) + ' /day' : '—'}</div>`);
+  kv.push(`<div class="k">Lead time</div><div class="v num">${p.lead ? fmt(p.lead) + ' d' : '—'}</div>`);
+  kv.push(`<div class="k">Reorder point (Finale)</div><div class="v num">${p.reorderPt != null ? fmt(p.reorderPt) : '—'}</div>`);
+  kv.push(`<div class="h">Suggested</div>`);
+  kv.push(`<div class="k">Target (lead + ${BUY_BUFFER_DAYS}d buffer)</div><div class="v num">${fmt(p.buy.target)}</div>`);
+  kv.push(`<div class="note">Order ~${fmt(p.buy.suggested)} units to reach target cover. This is a starting point from sales velocity and lead time, not a purchase order — place it in Finale.</div>`);
+  if (p.supplier) kv.push(`<div class="k">Supplier</div><div class="v">${esc(p.supplier)}</div>`);
+  return `<li class="stripe ${cc}"><button class="rowbtn" aria-expanded="false">
+    <div><div class="t">${esc(p.desc || p.id)}</div><div class="s num">${esc(p.id)}${p.supplier ? ' · ' + esc(p.supplier) : ''}</div></div>
+    <div class="r"><div class="big num">${fmt(p.buy.suggested)}<small>to order</small></div><span class="pill ${cc}">${p.onHand<=0?'OUT · ':''}${coverTxt}</span></div>
+  </button><div class="detail"><div class="kv">${kv.join('')}</div></div></li>`;
+}
+function renderBuy(){
+  const el = $('#s-buy');
+  const suppliers = [...new Set(buyList.map(p => p.supplier || 'No supplier on file'))].sort();
+  el.innerHTML = `
+  <div class="tiles" style="grid-template-columns:1fr 1fr">
+    <div class="tile"><span class="l">SKUs to reorder</span><span class="v num">${buyList.length}</span><span class="d"><span class="dot ${buyUrgent.length?'crit':'good'}"></span>${buyUrgent.length} urgent</span></div>
+    <div class="tile"><span class="l">Suggested units</span><span class="v num">${fmt(buyList.reduce((a,p)=>a+p.buy.suggested,0))}</span><span class="d">across ${suppliers.length} supplier${suppliers.length===1?'':'s'}</span></div>
+  </div>
+  ${buySuppliers.length ? `<div class="eyebrow">By supplier<span class="cnt num">${buySuppliers.length}</span></div>
+  <div class="panel"><ul class="list">${buySuppliers.slice(0,8).map(s => `<li><button class="rowbtn" data-sup="${esc(s.name)}" style="min-height:48px">
+    <div><div class="t">${esc(s.name)}</div><div class="s">${s.openPOs} open PO${s.openPOs===1?'':'s'}${s.latePOs?` · ${s.latePOs} late`:''}${s.nextEta?` · next ETA ${fdate(s.nextEta)}`:''}</div></div>
+    <div class="r"><div class="big num">${fmt(s.units)}<small>units</small></div><span class="pill ${s.urgent?'crit':'warn'}">${s.urgent} urgent</span></div>
+  </button></li>`).join('')}</ul></div>` : ''}
+  <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="bq" type="search" placeholder="SKU, description or supplier" autocomplete="off" autocorrect="off" spellcheck="false" value="${esc(buyState.q)}"><button id="bqx" ${buyState.q?'':'hidden'}>Clear</button></div>
+  <div class="chips" id="buyChips">
+    <button class="chip" data-chip="urgent">Urgent<span class="n">${buyUrgent.length}</span></button>
+    <button class="chip" data-chip="all">All flagged<span class="n">${buyList.length}</span></button>
+  </div>
+  <select class="sel" id="buySupplier"><option value="">Any supplier</option>${suppliers.map(s => `<option value="${esc(s)}" ${buyState.supplier===s?'selected':''}>${esc(s)}</option>`).join('')}</select>
+  <div id="buyList"></div>
+  <p class="note">Suggestions use each SKU's sales velocity and lead time (order enough to cover lead time + a ${BUY_BUFFER_DAYS}-day buffer), or Finale's own reorder point for slow movers with no reliable velocity. They don't account for cost, MOQs, or supplier minimums — check before placing a PO.</p>`;
+  const q = $('#bq', el), qx = $('#bqx', el);
+  q.addEventListener('input', () => { buyState.q = q.value; qx.hidden = !q.value; drawBuy(); });
+  qx.addEventListener('click', () => { q.value=''; buyState.q=''; qx.hidden=true; drawBuy(); q.focus(); });
+  $('#buySupplier', el).addEventListener('change', e => { buyState.supplier = e.target.value; drawBuy(); });
+  el.querySelectorAll('#buyChips .chip').forEach(c => c.addEventListener('click', () => { buyState.chip = c.dataset.chip; drawBuy(); }));
+  el.querySelectorAll('[data-sup]').forEach(b => b.addEventListener('click', () => { buyState.supplier = b.dataset.sup; $('#buySupplier', el).value = b.dataset.sup; drawBuy(); window.scrollTo(0, el.querySelector('.search').offsetTop - 8); }));
+  drawBuy();
+}
+function drawBuy(){
+  const el = $('#s-buy');
+  el.querySelectorAll('#buyChips .chip').forEach(c => c.classList.toggle('active', c.dataset.chip === buyState.chip));
+  let items = buyState.chip === 'urgent' ? buyUrgent : buyList;
+  if (buyState.supplier) items = items.filter(p => (p.supplier || 'No supplier on file') === buyState.supplier);
+  const q = buyState.q.trim().toLowerCase();
+  if (q){ const terms = q.split(/\s+/); items = items.filter(p => { const hay = `${p.id} ${p.desc||''} ${p.supplier||''}`.toLowerCase(); return terms.every(t => hay.includes(t)); }); }
+  const head = `<div class="toolbar"><div class="eyebrow">${buyState.supplier ? esc(buyState.supplier) + ' · ' : ''}${buyState.chip === 'urgent' ? 'Urgent' : 'All flagged'}<span class="cnt num">${items.length}</span></div>${exportBtn('buyExport', 'Export CSV')}</div>`;
+  $('#buyList', el).innerHTML = head + listWithMore(items, buyRow, 40);
+  const xb = document.getElementById('buyExport');
+  if (xb) xb.addEventListener('click', () => exportCSV('reorder-suggestions.csv', items, [
+    ['SKU', p=>p.id], ['Description', p=>p.desc], ['Supplier', p=>p.supplier], ['On hand', p=>p.onHand],
+    ['On order', p=>p.onOrder], ['Reserved', p=>p.reserved], ['Lead time (d)', p=>p.lead],
+    ['Cover (d)', p=>p.buy.coverDays], ['Suggested order qty', p=>p.buy.suggested], ['Urgent', p=>p.buy.urgent ? 'Y' : 'N'],
+  ]));
 }
 
 // ---- INBOUND ----
+let inboundState = { q: '' };
 function renderInbound(){
   const el = $('#s-inbound');
-  const late = POs.filter(p=>p.late>0), onTime = POs.filter(p=>!p.late && !p.fullyReceived);
   el.innerHTML = `
+  <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="iq" type="search" placeholder="PO, transfer, supplier or location" autocomplete="off" autocorrect="off" spellcheck="false" value="${esc(inboundState.q)}"><button id="iqx" ${inboundState.q?'':'hidden'}>Clear</button></div>
+  <div id="inboundBody"></div>`;
+  const q = $('#iq', el), qx = $('#iqx', el);
+  q.addEventListener('input', () => { inboundState.q = q.value; qx.hidden = !q.value; drawInbound(); });
+  qx.addEventListener('click', () => { q.value=''; inboundState.q=''; qx.hidden=true; drawInbound(); q.focus(); });
+  drawInbound();
+}
+function drawInbound(){
+  const el = $('#s-inbound');
+  const body = $('#inboundBody', el);
+  const q = inboundState.q.trim().toLowerCase();
+  const terms = q ? q.split(/\s+/) : [];
+  const matches = hay => terms.every(t => hay.toLowerCase().includes(t));
+  const POsF = terms.length ? POs.filter(p => matches(`${p.id} ${p.supplier||''} ${p.dest||''}`)) : POs;
+  const TF = terms.length ? T.filter(t => matches(`${t.id} ${t.origin||''} ${t.dest||''}`)) : T;
+  const late = POsF.filter(p=>p.late>0), onTime = POsF.filter(p=>!p.late && !p.fullyReceived);
+  const doneF = POsF.filter(p=>p.fullyReceived);
+  const tInboundF = TF.filter(t => t.dest === 'BBHQ' && !/received/i.test(t.shipStatus||''));
+  const tStaleF = TF.filter(t => /received/i.test(t.shipStatus||''));
+  const tMovingF = TF.filter(t => !/received/i.test(t.shipStatus||'') && t.dest !== 'BBHQ');
+  body.innerHTML = `
+  ${q ? `<div class="eyebrow">Search results<span class="cnt num">${POsF.length + TF.length}</span></div>` : ''}
   ${late.length ? `<div class="eyebrow">Past expected date<span class="cnt num">${late.length}</span></div>${listWithMore(late, poRow)}` : ''}
   <div class="eyebrow">Purchase orders on the way<span class="cnt num">${onTime.length}</span></div>${listWithMore(onTime, poRow)}
-  ${doneOpenPOs.length ? `<div class="eyebrow">Received, still open<span class="cnt num">${doneOpenPOs.length}</span></div>${listWithMore(doneOpenPOs, poRow)}<p class="note">Stock is in. These just need to be marked complete in Finale.</p>` : ''}
-  ${tInbound.length ? `<div class="eyebrow">Transfers inbound to HQ<span class="cnt num">${tInbound.length}</span></div>${listWithMore(tInbound, transferRow)}` : ''}
-  ${tMoving.length ? `<div class="eyebrow">Transfers outbound<span class="cnt num">${tMoving.length}</span></div>${listWithMore(tMoving, transferRow)}` : ''}
-  ${tStale.length ? `<div class="eyebrow">Transfers received, still open<span class="cnt num">${tStale.length}</span></div>${listWithMore(tStale, transferRow, 20)}` : ''}`;
+  ${doneF.length ? `<div class="eyebrow">Received, still open<span class="cnt num">${doneF.length}</span></div>${listWithMore(doneF, poRow)}<p class="note">Stock is in. These just need to be marked complete in Finale.</p>` : ''}
+  ${tInboundF.length ? `<div class="eyebrow">Transfers inbound to HQ<span class="cnt num">${tInboundF.length}</span></div>${listWithMore(tInboundF, transferRow)}` : ''}
+  ${tMovingF.length ? `<div class="eyebrow">Transfers outbound<span class="cnt num">${tMovingF.length}</span></div>${listWithMore(tMovingF, transferRow)}` : ''}
+  ${tStaleF.length ? `<div class="eyebrow">Transfers received, still open<span class="cnt num">${tStaleF.length}</span></div>${listWithMore(tStaleF, transferRow, 20)}` : ''}
+  ${!late.length && !onTime.length && !doneF.length && !tInboundF.length && !tMovingF.length && !tStaleF.length ? '<div class="empty">Nothing matches</div>' : ''}`;
 }
 
 // ---- ORDERS ----
-let orderChip = 'all';
+let orderState = { chip: 'all', q: '' };
 function renderOrders(){
   const el = $('#s-orders');
   const sources = [...new Set(S.map(o => o.source || 'Unknown'))];
   const byOrigin = [...new Set(S.map(o => o.origin || '?'))];
   el.innerHTML = `
+  <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="oq" type="search" placeholder="Order #, customer or PO" autocomplete="off" autocorrect="off" spellcheck="false" value="${esc(orderState.q)}"><button id="oqx" ${orderState.q?'':'hidden'}>Clear</button></div>
   <div class="chips" id="orderChips">
     <button class="chip" data-chip="all">All<span class="n">${S.length}</span></button>
     <button class="chip" data-chip="back">Backordered<span class="n">${backorders.length}</span></button>
@@ -468,24 +625,34 @@ function renderOrders(){
   </div>
   <select class="sel" id="src"><option value="">Every channel</option>${sources.map(s => `<option value="${esc(s)}">${esc(s)} (${S.filter(o=>(o.source||'Unknown')===s).length})</option>`).join('')}</select>
   <div id="orderList"></div>`;
-  el.querySelectorAll('#orderChips .chip').forEach(c => c.addEventListener('click', () => { orderChip = c.dataset.chip; drawOrders(); }));
+  const q = $('#oq', el), qx = $('#oqx', el);
+  q.addEventListener('input', () => { orderState.q = q.value; qx.hidden = !q.value; drawOrders(); });
+  qx.addEventListener('click', () => { q.value=''; orderState.q=''; qx.hidden=true; drawOrders(); q.focus(); });
+  el.querySelectorAll('#orderChips .chip').forEach(c => c.addEventListener('click', () => { orderState.chip = c.dataset.chip; drawOrders(); }));
   $('#src', el).addEventListener('change', drawOrders);
   drawOrders();
 }
 function drawOrders(){
   const el = $('#s-orders');
-  el.querySelectorAll('#orderChips .chip').forEach(c => c.classList.toggle('active', c.dataset.chip === orderChip));
+  el.querySelectorAll('#orderChips .chip').forEach(c => c.classList.toggle('active', c.dataset.chip === orderState.chip));
   let items = S;
-  if (orderChip === 'back') items = backorders;
-  else if (orderChip === 'ready') items = ready;
-  else if (orderChip === 'packed') items = packed;
-  else if (orderChip === 'week') items = S.filter(o=>o.ship && daysFrom(o.ship) >= -7 && daysFrom(o.ship) <= 0);
-  else if (orderChip.startsWith('o:')) items = S.filter(o => o.origin === orderChip.slice(2));
+  if (orderState.chip === 'back') items = backorders;
+  else if (orderState.chip === 'ready') items = ready;
+  else if (orderState.chip === 'packed') items = packed;
+  else if (orderState.chip === 'week') items = S.filter(o=>o.ship && daysFrom(o.ship) >= -7 && daysFrom(o.ship) <= 0);
+  else if (orderState.chip.startsWith('o:')) items = S.filter(o => o.origin === orderState.chip.slice(2));
   const src = $('#src', el).value; if (src) items = items.filter(o => (o.source||'Unknown') === src);
+  const q = orderState.q.trim().toLowerCase();
+  if (q){ const terms = q.split(/\s+/); items = items.filter(o => { const hay = `${o.id} ${o.customer||''} ${o.po||''} ${o.source||''} ${o.origin||''}`.toLowerCase(); return terms.every(t => hay.includes(t)); }); }
   items = items.slice().sort((a,b) => (a.ship||'9999') < (b.ship||'9999') ? -1 : (a.ship||'9999') > (b.ship||'9999') ? 1 : a.date < b.date ? -1 : 1);
   const units = items.reduce((a,o)=>a+o.units,0);
-  $('#orderList', el).innerHTML = `<div class="eyebrow">Sorted by ship date<span class="cnt num">${items.length} orders · ${fmt(units)} units</span></div>` + listWithMore(items, orderRow) +
+  $('#orderList', el).innerHTML = `<div class="toolbar"><div class="eyebrow">${q ? 'Search results' : 'Sorted by ship date'}<span class="cnt num">${items.length} orders · ${fmt(units)} units</span></div>${exportBtn('ordersExport', 'Export CSV')}</div>` + listWithMore(items, orderRow) +
     `<p class="note">${FBA.length} Amazon FBA orders are open but fulfilled by Amazon, so they're left out here. "Ready to pick" is Finale's eligible-to-ship flag; backordered means at least one line can't be filled from current stock.</p>`;
+  const xb = document.getElementById('ordersExport');
+  if (xb) xb.addEventListener('click', () => exportCSV('open-orders.csv', items, [
+    ['Order', o=>o.id], ['Customer', o=>o.customer], ['Channel', o=>o.source], ['Ships from', o=>o.origin],
+    ['Placed', o=>o.date], ['Ship date', o=>o.ship], ['Status', o=>o.eligible || o.shipStatus], ['Items', o=>o.items], ['Units', o=>o.units],
+  ]));
 }
 
 // ---- LOTS ----
@@ -544,15 +711,17 @@ function renderFBA(){
 
 // ---- nav ----
 const rendered = {};
-const renderers = { home: renderHome, stock: renderStock, inbound: renderInbound, orders: renderOrders, lots: renderLots, fba: renderFBA };
+const renderers = { home: renderHome, stock: renderStock, buy: renderBuy, inbound: renderInbound, orders: renderOrders, lots: renderLots, fba: renderFBA };
 function go(tab, chip){
   document.querySelectorAll('section.screen').forEach(s => s.classList.toggle('active', s.id === 's-' + tab));
   document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
   if (chip && tab === 'stock') stockState.chip = chip;
-  if (chip && tab === 'orders') orderChip = chip;
+  if (chip && tab === 'orders') orderState.chip = chip;
+  if (chip && tab === 'buy') buyState.chip = chip;
   if (!rendered[tab]) { renderers[tab](); rendered[tab] = true; }
   else if (chip && tab === 'stock') drawStock();
   else if (chip && tab === 'orders') drawOrders();
+  else if (chip && tab === 'buy') drawBuy();
   window.scrollTo(0, 0);
   try { localStorage.setItem('bb-tab', tab); } catch(e){}
 }
