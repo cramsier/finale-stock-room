@@ -189,6 +189,21 @@ function exportCSV(filename, rows, cols){
 function exportBtn(id, label){ return `<button class="btn acc" id="${id}"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4"/><path d="M4 17v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3"/></svg>${esc(label)}</button>`;
 }
 
+// ---- sorting ----
+// Compares IDs/order numbers numerically when both sides look numeric, else falls back to text.
+function idCompare(a, b){
+  // Compare by the first run of digits (e.g. "BB-270608" -> 270608, "2606110801 - Biltong pt 2"
+  // -> 2606110801) rather than stripping all digits, which would pull in unrelated numbers from
+  // free-text suffixes some Finale PO ids carry (like the trailing "2" in "...Biltong pt 2").
+  const sa = String(a ?? ''), sb = String(b ?? '');
+  const ma = sa.match(/\d+/), mb = sb.match(/\d+/);
+  if (ma && mb) { const na = Number(ma[0]), nb = Number(mb[0]); if (na !== nb) return na - nb; }
+  return sa.localeCompare(sb);
+}
+function sortSelectHTML(id, options, current){
+  return `<select class="sel" id="${id}">${options.map(([k,label]) => `<option value="${k}" ${current===k?'selected':''}>${esc(label)}</option>`).join('')}</select>`;
+}
+
 // ---- stamp: relative time of last pull ----
 (function stamp(){
   const t = new Date(D.meta.pulledAt);
@@ -448,7 +463,16 @@ function renderHome(){
 }
 
 // ---- STOCK ----
-let stockState = { q:'', chip:'all', cat:'', loc:'' };
+const STOCK_SORTS = {
+  auto: ['Best default', null],
+  desc_az: ['Description (A–Z)', (a,b) => (a.desc||'').localeCompare(b.desc||'')],
+  id_asc: ['SKU (low–high)', (a,b) => idCompare(a.id, b.id)],
+  onhand_desc: ['On hand (high–low)', (a,b) => b.onHand - a.onHand],
+  onhand_asc: ['On hand (low–high)', (a,b) => a.onHand - b.onHand],
+  cover_asc: ['Days of cover (soonest out)', (a,b) => (a.cover ?? -1) - (b.cover ?? -1)],
+  vel_desc: ['Velocity (high–low)', (a,b) => b.vel - a.vel],
+};
+let stockState = { q:'', chip:'all', cat:'', loc:'', sort:'auto' };
 function renderStock(){
   const el = $('#s-stock');
   el.innerHTML = `
@@ -465,12 +489,14 @@ function renderStock(){
     <select class="sel" id="loc"><option value="">Any location</option>${locNames.map(l => `<option value="${esc(l)}" ${stockState.loc===l?'selected':''}>${esc(l)}</option>`).join('')}</select>
     <select class="sel" id="cat"><option value="">Any category</option>${cats.map(c => `<option value="${esc(c)}" ${stockState.cat===c?'selected':''}>${esc(c)}</option>`).join('')}</select>
   </div>
+  ${sortSelectHTML('ssort', Object.entries(STOCK_SORTS).map(([k,v])=>[k,v[0]]), stockState.sort)}
   <div id="stockList"></div>`;
   const q = $('#q', el), qx = $('#qx', el);
   q.addEventListener('input', () => { stockState.q = q.value; qx.hidden = !q.value; drawStock(); });
   qx.addEventListener('click', () => { q.value=''; stockState.q=''; qx.hidden=true; drawStock(); q.focus(); });
   $('#loc', el).addEventListener('change', e => { stockState.loc = e.target.value; drawStock(); });
   $('#cat', el).addEventListener('change', e => { stockState.cat = e.target.value; drawStock(); });
+  $('#ssort', el).addEventListener('change', e => { stockState.sort = e.target.value; drawStock(); });
   el.querySelectorAll('#stockChips .chip').forEach(c => c.addEventListener('click', () => { stockState.chip = c.dataset.chip; drawStock(); }));
   drawStock();
 }
@@ -493,6 +519,8 @@ function drawStock(){
     const terms = q.split(/\s+/);
     items = (stockState.chip === 'all' && !stockState.loc ? P : items).filter(p => { const hay = `${p.id} ${p.desc||''} ${p.upc||''} ${p.cat}`.toLowerCase(); return terms.every(t => hay.includes(t)); });
   }
+  const sortFn = STOCK_SORTS[stockState.sort][1];
+  if (sortFn) items = items.slice().sort(sortFn);
   const head = `<div class="toolbar"><div class="eyebrow">${stockState.loc ? esc(stockState.loc) + ' · ' : ''}${q ? 'Search results' : ({all:'In stock',low:'Low cover — sells, ≤30 days left',out:'Out of stock — still selling',inbound:'On order',reserved:'Reserved on open orders',every:'All active SKUs'})[stockState.chip]}<span class="cnt num">${items.length}</span></div>${exportBtn('stockExport', 'Export CSV')}</div>`;
   $('#stockList', el).innerHTML = head + listWithMore(items, productRow, 40, stockState.loc ? 'loc' : '');
   const xb = document.getElementById('stockExport');
@@ -504,7 +532,14 @@ function drawStock(){
 }
 
 // ---- BUY (reorder suggestions) ----
-let buyState = { chip: 'urgent', q: '', supplier: '' };
+const BUY_SORTS = {
+  auto: ['Urgency (default)', null],
+  supplier_az: ['Supplier (A–Z)', (a,b) => (a.supplier||'').localeCompare(b.supplier||'')],
+  sku_az: ['Description (A–Z)', (a,b) => (a.desc||'').localeCompare(b.desc||'')],
+  qty_desc: ['Suggested qty (high–low)', (a,b) => b.buy.suggested - a.buy.suggested],
+  cover_asc: ['Days of cover (soonest out)', (a,b) => (a.buy.coverDays ?? -1) - (b.buy.coverDays ?? -1)],
+};
+let buyState = { chip: 'urgent', q: '', supplier: '', sort: 'auto' };
 function buyRow(p){
   const cc = p.buy.urgent ? 'crit' : 'warn';
   const coverTxt = p.buy.coverDays == null ? '—' : p.buy.coverDays >= 999 ? '365+ d' : `${fmt(p.buy.coverDays)} d`;
@@ -543,13 +578,17 @@ function renderBuy(){
     <button class="chip" data-chip="urgent">Urgent<span class="n">${buyUrgent.length}</span></button>
     <button class="chip" data-chip="all">All flagged<span class="n">${buyList.length}</span></button>
   </div>
-  <select class="sel" id="buySupplier"><option value="">Any supplier</option>${suppliers.map(s => `<option value="${esc(s)}" ${buyState.supplier===s?'selected':''}>${esc(s)}</option>`).join('')}</select>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <select class="sel" id="buySupplier"><option value="">Any supplier</option>${suppliers.map(s => `<option value="${esc(s)}" ${buyState.supplier===s?'selected':''}>${esc(s)}</option>`).join('')}</select>
+    ${sortSelectHTML('bsort', Object.entries(BUY_SORTS).map(([k,v])=>[k,v[0]]), buyState.sort)}
+  </div>
   <div id="buyList"></div>
   <p class="note">Suggestions use each SKU's sales velocity and lead time (order enough to cover lead time + a ${BUY_BUFFER_DAYS}-day buffer), or Finale's own reorder point for slow movers with no reliable velocity. They don't account for cost, MOQs, or supplier minimums — check before placing a PO.</p>`;
   const q = $('#bq', el), qx = $('#bqx', el);
   q.addEventListener('input', () => { buyState.q = q.value; qx.hidden = !q.value; drawBuy(); });
   qx.addEventListener('click', () => { q.value=''; buyState.q=''; qx.hidden=true; drawBuy(); q.focus(); });
   $('#buySupplier', el).addEventListener('change', e => { buyState.supplier = e.target.value; drawBuy(); });
+  $('#bsort', el).addEventListener('change', e => { buyState.sort = e.target.value; drawBuy(); });
   el.querySelectorAll('#buyChips .chip').forEach(c => c.addEventListener('click', () => { buyState.chip = c.dataset.chip; drawBuy(); }));
   el.querySelectorAll('[data-sup]').forEach(b => b.addEventListener('click', () => { buyState.supplier = b.dataset.sup; $('#buySupplier', el).value = b.dataset.sup; drawBuy(); window.scrollTo(0, el.querySelector('.search').offsetTop - 8); }));
   drawBuy();
@@ -561,6 +600,8 @@ function drawBuy(){
   if (buyState.supplier) items = items.filter(p => (p.supplier || 'No supplier on file') === buyState.supplier);
   const q = buyState.q.trim().toLowerCase();
   if (q){ const terms = q.split(/\s+/); items = items.filter(p => { const hay = `${p.id} ${p.desc||''} ${p.supplier||''}`.toLowerCase(); return terms.every(t => hay.includes(t)); }); }
+  const buySortFn = BUY_SORTS[buyState.sort][1];
+  if (buySortFn) items = items.slice().sort(buySortFn);
   const head = `<div class="toolbar"><div class="eyebrow">${buyState.supplier ? esc(buyState.supplier) + ' · ' : ''}${buyState.chip === 'urgent' ? 'Urgent' : 'All flagged'}<span class="cnt num">${items.length}</span></div>${exportBtn('buyExport', 'Export CSV')}</div>`;
   $('#buyList', el).innerHTML = head + listWithMore(items, buyRow, 40);
   const xb = document.getElementById('buyExport');
@@ -572,15 +613,26 @@ function drawBuy(){
 }
 
 // ---- INBOUND ----
-let inboundState = { q: '' };
+const PO_SORTS = {
+  eta: ['ETA (soonest)', (a,b) => (a.eta||'9999').localeCompare(b.eta||'9999')],
+  placed_new: ['Order date (newest)', (a,b) => b.date.localeCompare(a.date)],
+  placed_old: ['Order date (oldest)', (a,b) => a.date.localeCompare(b.date)],
+  id_asc: ['# (low–high)', (a,b) => idCompare(a.id, b.id)],
+  id_desc: ['# (high–low)', (a,b) => idCompare(b.id, a.id)],
+  supplier: ['Supplier / origin (A–Z)', (a,b) => (a.supplier||a.origin||'').localeCompare(b.supplier||b.origin||'')],
+  units_desc: ['Units (high–low)', (a,b) => (b.remaining ?? b.units) - (a.remaining ?? a.units)],
+};
+let inboundState = { q: '', sort: 'eta' };
 function renderInbound(){
   const el = $('#s-inbound');
   el.innerHTML = `
   <div class="search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input id="iq" type="search" placeholder="PO, transfer, supplier or location" autocomplete="off" autocorrect="off" spellcheck="false" value="${esc(inboundState.q)}"><button id="iqx" ${inboundState.q?'':'hidden'}>Clear</button></div>
+  ${sortSelectHTML('isort', Object.entries(PO_SORTS).map(([k,v])=>[k,v[0]]), inboundState.sort)}
   <div id="inboundBody"></div>`;
   const q = $('#iq', el), qx = $('#iqx', el);
   q.addEventListener('input', () => { inboundState.q = q.value; qx.hidden = !q.value; drawInbound(); });
   qx.addEventListener('click', () => { q.value=''; inboundState.q=''; qx.hidden=true; drawInbound(); q.focus(); });
+  $('#isort', el).addEventListener('change', e => { inboundState.sort = e.target.value; drawInbound(); });
   drawInbound();
 }
 function drawInbound(){
@@ -589,8 +641,9 @@ function drawInbound(){
   const q = inboundState.q.trim().toLowerCase();
   const terms = q ? q.split(/\s+/) : [];
   const matches = hay => terms.every(t => hay.toLowerCase().includes(t));
-  const POsF = terms.length ? POs.filter(p => matches(`${p.id} ${p.supplier||''} ${p.dest||''}`)) : POs;
-  const TF = terms.length ? T.filter(t => matches(`${t.id} ${t.origin||''} ${t.dest||''}`)) : T;
+  const sortFn = PO_SORTS[inboundState.sort][1];
+  const POsF = (terms.length ? POs.filter(p => matches(`${p.id} ${p.supplier||''} ${p.dest||''}`)) : POs).slice().sort(sortFn);
+  const TF = (terms.length ? T.filter(t => matches(`${t.id} ${t.origin||''} ${t.dest||''}`)) : T).slice().sort(sortFn);
   const late = POsF.filter(p=>p.late>0), onTime = POsF.filter(p=>!p.late && !p.fullyReceived);
   const doneF = POsF.filter(p=>p.fullyReceived);
   const tInboundF = TF.filter(t => t.dest === 'BBHQ' && !/received/i.test(t.shipStatus||''));
@@ -608,7 +661,16 @@ function drawInbound(){
 }
 
 // ---- ORDERS ----
-let orderState = { chip: 'all', q: '' };
+const ORDER_SORTS = {
+  ship: ['Ship date (soonest)', (a,b) => (a.ship||'9999').localeCompare(b.ship||'9999') || a.date.localeCompare(b.date)],
+  placed_new: ['Order date (newest)', (a,b) => b.date.localeCompare(a.date)],
+  placed_old: ['Order date (oldest)', (a,b) => a.date.localeCompare(b.date)],
+  id_asc: ['Order # (low–high)', (a,b) => idCompare(a.id, b.id)],
+  id_desc: ['Order # (high–low)', (a,b) => idCompare(b.id, a.id)],
+  customer: ['Customer (A–Z)', (a,b) => (a.customer||'').localeCompare(b.customer||'')],
+  units_desc: ['Units (high–low)', (a,b) => b.units - a.units],
+};
+let orderState = { chip: 'all', q: '', sort: 'ship' };
 function renderOrders(){
   const el = $('#s-orders');
   const sources = [...new Set(S.map(o => o.source || 'Unknown'))];
@@ -623,13 +685,17 @@ function renderOrders(){
     <button class="chip" data-chip="week">Ships this week<span class="n">${S.filter(o=>o.ship && daysFrom(o.ship) >= -7 && daysFrom(o.ship) <= 0).length}</span></button>
     ${byOrigin.filter(x=>x!=='BBHQ').map(o => `<button class="chip" data-chip="o:${esc(o)}">${esc(o)}<span class="n">${S.filter(x=>x.origin===o).length}</span></button>`).join('')}
   </div>
-  <select class="sel" id="src"><option value="">Every channel</option>${sources.map(s => `<option value="${esc(s)}">${esc(s)} (${S.filter(o=>(o.source||'Unknown')===s).length})</option>`).join('')}</select>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+    <select class="sel" id="src"><option value="">Every channel</option>${sources.map(s => `<option value="${esc(s)}">${esc(s)} (${S.filter(o=>(o.source||'Unknown')===s).length})</option>`).join('')}</select>
+    ${sortSelectHTML('osort', Object.entries(ORDER_SORTS).map(([k,v])=>[k,v[0]]), orderState.sort)}
+  </div>
   <div id="orderList"></div>`;
   const q = $('#oq', el), qx = $('#oqx', el);
   q.addEventListener('input', () => { orderState.q = q.value; qx.hidden = !q.value; drawOrders(); });
   qx.addEventListener('click', () => { q.value=''; orderState.q=''; qx.hidden=true; drawOrders(); q.focus(); });
   el.querySelectorAll('#orderChips .chip').forEach(c => c.addEventListener('click', () => { orderState.chip = c.dataset.chip; drawOrders(); }));
   $('#src', el).addEventListener('change', drawOrders);
+  $('#osort', el).addEventListener('change', e => { orderState.sort = e.target.value; drawOrders(); });
   drawOrders();
 }
 function drawOrders(){
@@ -644,9 +710,9 @@ function drawOrders(){
   const src = $('#src', el).value; if (src) items = items.filter(o => (o.source||'Unknown') === src);
   const q = orderState.q.trim().toLowerCase();
   if (q){ const terms = q.split(/\s+/); items = items.filter(o => { const hay = `${o.id} ${o.customer||''} ${o.po||''} ${o.source||''} ${o.origin||''}`.toLowerCase(); return terms.every(t => hay.includes(t)); }); }
-  items = items.slice().sort((a,b) => (a.ship||'9999') < (b.ship||'9999') ? -1 : (a.ship||'9999') > (b.ship||'9999') ? 1 : a.date < b.date ? -1 : 1);
+  items = items.slice().sort(ORDER_SORTS[orderState.sort][1]);
   const units = items.reduce((a,o)=>a+o.units,0);
-  $('#orderList', el).innerHTML = `<div class="toolbar"><div class="eyebrow">${q ? 'Search results' : 'Sorted by ship date'}<span class="cnt num">${items.length} orders · ${fmt(units)} units</span></div>${exportBtn('ordersExport', 'Export CSV')}</div>` + listWithMore(items, orderRow) +
+  $('#orderList', el).innerHTML = `<div class="toolbar"><div class="eyebrow">${q ? 'Search results' : 'Sorted by ' + ORDER_SORTS[orderState.sort][0].toLowerCase()}<span class="cnt num">${items.length} orders · ${fmt(units)} units</span></div>${exportBtn('ordersExport', 'Export CSV')}</div>` + listWithMore(items, orderRow) +
     `<p class="note">${FBA.length} Amazon FBA orders are open but fulfilled by Amazon, so they're left out here. "Ready to pick" is Finale's eligible-to-ship flag; backordered means at least one line can't be filled from current stock.</p>`;
   const xb = document.getElementById('ordersExport');
   if (xb) xb.addEventListener('click', () => exportCSV('open-orders.csv', items, [
