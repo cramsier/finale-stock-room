@@ -118,8 +118,9 @@ select.sel{width:100%;appearance:none;-webkit-appearance:none;background:var(--s
 .noteflag{grid-column:1/-1;margin-top:2px}
 .noteflag .existing{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:7px 9px;font-size:12.5px;margin-bottom:7px;overflow-wrap:anywhere}
 .noteflag textarea{width:100%;display:block;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font:inherit;font-size:13.5px;background:var(--surface);color:var(--ink);resize:vertical;min-height:50px}
-.noteflag .row{display:flex;gap:8px;margin-top:7px;align-items:center}
+.noteflag .row{display:flex;gap:8px;margin-top:7px;align-items:center;flex-wrap:wrap}
 .noteflag .saved{font-size:11.5px;color:var(--good);font-weight:600}
+.noteflag .flagBy{width:92px;flex:0 0 auto;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;font-size:12.5px;background:var(--surface);color:var(--ink)}
 
 /* ---- home ---- */
 .tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
@@ -408,6 +409,7 @@ function productRow(p, ctx){
     <div class="existing" ${flag ? '' : 'hidden'}>${flag ? '💬 <b>' + esc(flag.by) + '</b> · ' + esc(fdateY((flag.at||'').slice(0,10))) + ': ' + esc(flag.note) : ''}</div>
     <textarea class="flagInput" placeholder="Add a note for the team…" rows="2">${flag ? esc(flag.note) : ''}</textarea>
     <div class="row">
+      <input class="flagBy" type="text" placeholder="Your name" value="${esc(getStoredName())}" maxlength="40">
       <button class="btn acc flagSave" type="button">Save note</button>
       <button class="btn flagClear" type="button" ${flag ? '' : 'hidden'}>Clear</button>
       <span class="saved" hidden>Saved</span>
@@ -569,13 +571,16 @@ function renderStock(){
     const isClear = btn.classList.contains('flagClear');
     const ta = wrap.querySelector('.flagInput');
     const note = isClear ? '' : ta.value.trim();
+    const byInput = wrap.querySelector('.flagBy');
+    const by = (byInput.value || '').trim() || 'HQ';
+    setStoredName(by);
     const origLabel = btn.textContent;
     const row = wrap.closest('li');
     const allBtns = wrap.querySelectorAll('button');
     allBtns.forEach(b => b.disabled = true);
+    byInput.disabled = true;
     btn.textContent = isClear ? 'Clearing…' : 'Saving…';
     try {
-      const by = getByName();
       const res = await saveFlag(sku, note, by);
       const existing = wrap.querySelector('.existing');
       const clearBtn = wrap.querySelector('.flagClear');
@@ -593,11 +598,15 @@ function renderStock(){
         if (dot) dot.hidden = true;
       }
       const saved = wrap.querySelector('.saved');
+      saved.textContent = 'Saved'; saved.style.color = 'var(--good)';
       saved.hidden = false; setTimeout(() => { saved.hidden = true; }, 1500);
     } catch (err) {
-      alert('Could not save that note — check your connection and try again.');
+      const saved = wrap.querySelector('.saved');
+      saved.textContent = 'Could not save — check your connection'; saved.style.color = 'var(--crit)';
+      saved.hidden = false; setTimeout(() => { saved.hidden = true; }, 4000);
     } finally {
       allBtns.forEach(b => b.disabled = false);
+      byInput.disabled = false;
       btn.textContent = origLabel;
     }
   });
@@ -954,15 +963,13 @@ fetch('shipstation_carriers.json', {cache: 'no-store'}).then(r => r.ok ? r.json(
 // ---- Shared team notes (flags) on SKUs, via Cloudflare Worker + KV ----
 const FLAGS_API = 'https://bb-stock-room.chad-103.workers.dev/flags';
 let FLAGS = {};
-function getByName(){
-  try {
-    let n = localStorage.getItem('bb-by');
-    if (!n) { n = (prompt('Your name, so teammates know who left a note:') || '').trim() || 'HQ'; localStorage.setItem('bb-by', n); }
-    return n;
-  } catch (e) { return 'HQ'; }
+function getStoredName(){
+  try { return localStorage.getItem('bb-by') || ''; } catch (e) { return ''; }
 }
-function saveFlag(sku, note){
-  const by = getByName();
+function setStoredName(n){
+  try { localStorage.setItem('bb-by', n); } catch (e) {}
+}
+function saveFlag(sku, note, by){
   return fetch(FLAGS_API, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sku, note, by }),
