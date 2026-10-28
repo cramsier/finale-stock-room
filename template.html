@@ -59,7 +59,7 @@ section.screen{display:none}
 section.screen.active{display:block}
 
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--tab-bg);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
-nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(6,1fr);gap:2px}
+nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
 nav.tabs button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 1px 4px;border-radius:10px;color:var(--ink-3);font-family:"Barlow Condensed",sans-serif;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;position:relative}
 nav.tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 nav.tabs button.active{color:var(--accent)}
@@ -144,6 +144,7 @@ select.sel{width:100%;appearance:none;-webkit-appearance:none;background:var(--s
     <section class="screen" id="s-inbound"></section>
     <section class="screen" id="s-orders"></section>
     <section class="screen" id="s-fba"></section>
+    <section class="screen" id="s-ship"></section>
   </main>
   <nav class="tabs" aria-label="Screens"><div class="in">
     <button data-tab="home" class="active"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</button>
@@ -152,6 +153,7 @@ select.sel{width:100%;appearance:none;-webkit-appearance:none;background:var(--s
     <button data-tab="inbound"><svg viewBox="0 0 24 24"><path d="M1 8h14v9H1z"/><path d="M15 11h4l4 3v3h-8"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/></svg>Inbound<span class="badge" id="b-inbound" hidden></span></button>
     <button data-tab="orders"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Orders<span class="badge" id="b-orders" hidden></span></button>
     <button data-tab="fba"><svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>FBA<span class="badge" id="b-fba" hidden></span></button>
+    <button data-tab="ship"><svg viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg>Ship<span class="badge" id="b-ship" hidden></span></button>
   </div></nav>
 </div>
 
@@ -848,9 +850,51 @@ function drawFBA(){
   ]));
 }
 
+// ---- Ship: ShipStation carrier accounts ----
+// A one-time snapshot pulled directly from ShipStation (not part of the automated refresh — see
+// shipstation_carriers.json alongside this page for when it was last pulled). ShipStation's own
+// shipment/tracking API is currently broken on our connector, so this covers carrier accounts and
+// prepaid balances only, not live shipments.
+let SS_CARRIERS = [], SS_ASOF = null;
+function shipRow(c){
+  const name = c.nickname || c.friendly_name || c.carrier_code;
+  const sub = [c.friendly_name, c.carrier_code].filter((v,i,a) => v && a.indexOf(v) === i).join(' · ');
+  const bal = c.requires_funded_amount ? Number(c.balance||0).toLocaleString('en-US',{style:'currency',currency:'USD'}) : '—';
+  const pill = c.requires_funded_amount ? `<span class="pill acc">funded</span>` : `<span class="pill">pass-through</span>`;
+  return `<li><div class="rowbtn" style="cursor:default">
+    <div><div class="t">${esc(name)}${c.primary ? ' <span style="color:var(--ink-3);font-weight:500;font-size:12.5px">· primary</span>' : ''}</div><div class="s">${esc(sub)}</div></div>
+    <div class="r"><div class="big num">${bal}</div>${pill}</div>
+  </div></li>`;
+}
+function renderShip(){
+  const el = $('#s-ship');
+  const funded = SS_CARRIERS.filter(c => c.requires_funded_amount);
+  const uniqueBalances = [...new Set(funded.map(c => c.balance))];
+  const walletTotal = uniqueBalances.reduce((a,b) => a + (b||0), 0);
+  const sorted = SS_CARRIERS.slice().sort((a,b) => (b.requires_funded_amount - a.requires_funded_amount) || (b.balance||0) - (a.balance||0));
+  el.innerHTML = `
+  <div class="tiles" style="grid-template-columns:1fr 1fr">
+    <div class="tile"><span class="l">Funded carrier accounts</span><span class="v num">${fmt(funded.length)}</span><span class="d">${fmt(SS_CARRIERS.length - funded.length)} billed pass-through</span></div>
+    <div class="tile"><span class="l">Prepaid balance</span><span class="v num">${walletTotal.toLocaleString('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0})}</span><span class="d">across ${uniqueBalances.length} distinct wallet${uniqueBalances.length===1?'':'s'}</span></div>
+  </div>
+  <div class="toolbar"><div class="eyebrow">Carrier accounts<span class="cnt num">${SS_CARRIERS.length}</span></div>${SS_CARRIERS.length ? exportBtn('shipExport','Export CSV') : ''}</div>
+  ${listWithMore(sorted, shipRow, 40)}
+  <p class="note">Carrier connections and balances pulled directly from ShipStation${SS_ASOF ? ', as of ' + fdateY(SS_ASOF.slice(0,10)) : ''} — a one-time snapshot, not refreshed automatically. ShipStation's shipment/tracking API is currently broken on our connector, so this tab covers carrier accounts only for now. Carriers that share one prepaid "shipping card" wallet show the same balance on each — the total above counts each distinct wallet once rather than adding every row.</p>`;
+  const xb = document.getElementById('shipExport');
+  if (xb) xb.addEventListener('click', () => exportCSV('shipstation-carriers.csv', SS_CARRIERS, [
+    ['Carrier code', c=>c.carrier_code], ['Nickname', c=>c.nickname], ['Friendly name', c=>c.friendly_name],
+    ['Primary', c=>c.primary ? 'Yes':'No'], ['Funded', c=>c.requires_funded_amount?'Yes':'No'], ['Balance', c=>c.balance ?? ''],
+  ]));
+}
+fetch('shipstation_carriers.json', {cache: 'no-store'}).then(r => r.ok ? r.json() : null).then(j => {
+  if (!j || !j.carriers) return;
+  SS_CARRIERS = j.carriers; SS_ASOF = j.asOf;
+  if (rendered.ship && $('#s-ship').classList.contains('active')) { renderShip(); }
+}).catch(() => {});
+
 // ---- nav ----
 const rendered = {};
-const renderers = { home: renderHome, stock: renderStock, buy: renderBuy, inbound: renderInbound, orders: renderOrders, fba: renderFBA };
+const renderers = { home: renderHome, stock: renderStock, buy: renderBuy, inbound: renderInbound, orders: renderOrders, fba: renderFBA, ship: renderShip };
 function go(tab, chip){
   document.querySelectorAll('section.screen').forEach(s => s.classList.toggle('active', s.id === 's-' + tab));
   document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
