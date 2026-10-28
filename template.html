@@ -112,6 +112,14 @@ select.sel{width:100%;appearance:none;-webkit-appearance:none;background:var(--s
 .btn{display:inline-flex;align-items:center;gap:5px;padding:6px 10px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink-2);font-size:12.5px;font-weight:600;letter-spacing:.02em}
 .btn.acc{background:var(--accent-soft);color:var(--accent);border-color:transparent}
 .btn svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2}
+.btn:disabled{opacity:.55}
+.flagdot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--warn);margin-left:6px;vertical-align:middle}
+.flagdot[hidden],.noteflag .row button[hidden]{display:none}
+.noteflag{grid-column:1/-1;margin-top:2px}
+.noteflag .existing{background:var(--warn-soft);color:var(--warn);border-radius:8px;padding:7px 9px;font-size:12.5px;margin-bottom:7px;overflow-wrap:anywhere}
+.noteflag textarea{width:100%;display:block;border:1px solid var(--line);border-radius:10px;padding:8px 10px;font:inherit;font-size:13.5px;background:var(--surface);color:var(--ink);resize:vertical;min-height:50px}
+.noteflag .row{display:flex;gap:8px;margin-top:7px;align-items:center}
+.noteflag .saved{font-size:11.5px;color:var(--good);font-weight:600}
 
 /* ---- home ---- */
 .tiles{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
@@ -394,9 +402,20 @@ function productRow(p, ctx){
   if (p.supplier) kv.push(`<div class="k">Supplier</div><div class="v">${esc(p.supplier)}</div>`);
   if (p.upc) kv.push(`<div class="k">UPC</div><div class="v num">${esc(p.upc)}</div>`);
   kv.push(`<div class="k">Category</div><div class="v">${esc(p.cat)}</div>`);
+  const flag = FLAGS[p.id];
+  kv.push(`<div class="h">Team note</div>`);
+  kv.push(`<div class="noteflag" data-sku="${esc(p.id)}">
+    <div class="existing" ${flag ? '' : 'hidden'}>${flag ? '💬 <b>' + esc(flag.by) + '</b> · ' + esc(fdateY((flag.at||'').slice(0,10))) + ': ' + esc(flag.note) : ''}</div>
+    <textarea class="flagInput" placeholder="Add a note for the team…" rows="2">${flag ? esc(flag.note) : ''}</textarea>
+    <div class="row">
+      <button class="btn acc flagSave" type="button">Save note</button>
+      <button class="btn flagClear" type="button" ${flag ? '' : 'hidden'}>Clear</button>
+      <span class="saved" hidden>Saved</span>
+    </div>
+  </div>`);
   const sub = ctx === 'loc' ? '' : (locs.length > 1 ? `${locs.length} locations` : (locs[0] ? esc(locs[0][0]) : ''));
   return `<li class="stripe ${cc==='crit'||cc==='warn'?cc:''}"><button class="rowbtn" aria-expanded="false">
-    <div><div class="t">${esc(p.desc || p.id)}</div><div class="s num">${esc(p.id)}${sub ? ' · ' + sub : ''}</div></div>
+    <div><div class="t">${esc(p.desc || p.id)}</div><div class="s num">${esc(p.id)}${sub ? ' · ' + sub : ''}<span class="flagdot" ${flag ? '' : 'hidden'} title="Has a team note"></span></div></div>
     <div class="r"><div class="big num">${fmt(p.onHand)}${c != null ? `<small>${fmt(c)} cs</small>` : ''}</div><span class="pill ${cc}">${coverText(p)}</span></div>
   </button><div class="detail"><div class="kv">${kv.join('')}</div></div></li>`;
 }
@@ -542,6 +561,46 @@ function renderStock(){
   $('#cat', el).addEventListener('change', e => { stockState.cat = e.target.value; drawStock(); });
   $('#ssort', el).addEventListener('change', e => { stockState.sort = e.target.value; drawStock(); });
   el.querySelectorAll('#stockChips .chip').forEach(c => c.addEventListener('click', () => { stockState.chip = c.dataset.chip; drawStock(); }));
+  $('#stockList', el).addEventListener('click', async (e) => {
+    const btn = e.target.closest('.flagSave, .flagClear');
+    if (!btn) return;
+    const wrap = btn.closest('.noteflag');
+    const sku = wrap.dataset.sku;
+    const isClear = btn.classList.contains('flagClear');
+    const ta = wrap.querySelector('.flagInput');
+    const note = isClear ? '' : ta.value.trim();
+    const origLabel = btn.textContent;
+    const row = wrap.closest('li');
+    const allBtns = wrap.querySelectorAll('button');
+    allBtns.forEach(b => b.disabled = true);
+    btn.textContent = isClear ? 'Clearing…' : 'Saving…';
+    try {
+      const by = getByName();
+      const res = await saveFlag(sku, note, by);
+      const existing = wrap.querySelector('.existing');
+      const clearBtn = wrap.querySelector('.flagClear');
+      const dot = row.querySelector('.flagdot');
+      if (note) {
+        const rec = (res && res.record) || { note, by, at: new Date().toISOString() };
+        existing.hidden = false;
+        existing.innerHTML = '💬 <b>' + esc(rec.by) + '</b> · ' + esc(fdateY((rec.at||'').slice(0,10))) + ': ' + esc(rec.note);
+        clearBtn.hidden = false;
+        if (dot) dot.hidden = false;
+      } else {
+        existing.hidden = true; existing.textContent = '';
+        ta.value = '';
+        clearBtn.hidden = true;
+        if (dot) dot.hidden = true;
+      }
+      const saved = wrap.querySelector('.saved');
+      saved.hidden = false; setTimeout(() => { saved.hidden = true; }, 1500);
+    } catch (err) {
+      alert('Could not save that note — check your connection and try again.');
+    } finally {
+      allBtns.forEach(b => b.disabled = false);
+      btn.textContent = origLabel;
+    }
+  });
   drawStock();
 }
 function drawStock(){
@@ -890,6 +949,32 @@ fetch('shipstation_carriers.json', {cache: 'no-store'}).then(r => r.ok ? r.json(
   if (!j || !j.carriers) return;
   SS_CARRIERS = j.carriers; SS_ASOF = j.asOf;
   if (rendered.ship && $('#s-ship').classList.contains('active')) { renderShip(); }
+}).catch(() => {});
+
+// ---- Shared team notes (flags) on SKUs, via Cloudflare Worker + KV ----
+const FLAGS_API = 'https://bb-stock-room.chad-103.workers.dev/flags';
+let FLAGS = {};
+function getByName(){
+  try {
+    let n = localStorage.getItem('bb-by');
+    if (!n) { n = (prompt('Your name, so teammates know who left a note:') || '').trim() || 'HQ'; localStorage.setItem('bb-by', n); }
+    return n;
+  } catch (e) { return 'HQ'; }
+}
+function saveFlag(sku, note){
+  const by = getByName();
+  return fetch(FLAGS_API, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sku, note, by }),
+  }).then(r => r.json()).then(j => {
+    if (note) FLAGS[sku] = (j && j.record) || { note, by, at: new Date().toISOString() };
+    else delete FLAGS[sku];
+    return j;
+  });
+}
+fetch(FLAGS_API, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(j => {
+  FLAGS = (j && j.flags) || {};
+  if (rendered.stock && $('#s-stock').classList.contains('active')) { drawStock(); }
 }).catch(() => {});
 
 // ---- nav ----
