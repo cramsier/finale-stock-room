@@ -59,7 +59,7 @@ section.screen{display:none}
 section.screen.active{display:block}
 
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--tab-bg);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-top:1px solid var(--line);padding:6px 6px calc(6px + env(safe-area-inset-bottom))}
-nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(7,1fr);gap:2px}
+nav.tabs .in{max-width:720px;margin:0 auto;display:grid;grid-template-columns:repeat(6,1fr);gap:2px}
 nav.tabs button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 1px 4px;border-radius:10px;color:var(--ink-3);font-family:"Barlow Condensed",sans-serif;font-size:11px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;position:relative}
 nav.tabs button svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 nav.tabs button.active{color:var(--accent)}
@@ -125,9 +125,6 @@ select.sel{width:100%;appearance:none;-webkit-appearance:none;background:var(--s
 .note{font-size:13px;color:var(--ink-3);padding:6px 4px 0;line-height:1.4}
 .stripe{border-left:3px solid transparent}
 .stripe.crit{border-left-color:var(--crit)} .stripe.warn{border-left-color:var(--warn)}
-.lotgrid{display:grid;grid-template-columns:1fr auto auto;gap:4px 12px;font-size:13.5px;padding-top:8px}
-.lotgrid .hd{font-family:"Barlow Condensed",sans-serif;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
-.lotgrid .q{text-align:right;font-weight:500}
 @media (prefers-reduced-motion:no-preference){ .detail{animation:fade .12s ease-out} }
 @keyframes fade{from{opacity:.4}to{opacity:1}}
 </style>
@@ -146,7 +143,6 @@ select.sel{width:100%;appearance:none;-webkit-appearance:none;background:var(--s
     <section class="screen" id="s-buy"></section>
     <section class="screen" id="s-inbound"></section>
     <section class="screen" id="s-orders"></section>
-    <section class="screen" id="s-lots"></section>
     <section class="screen" id="s-fba"></section>
   </main>
   <nav class="tabs" aria-label="Screens"><div class="in">
@@ -155,7 +151,6 @@ select.sel{width:100%;appearance:none;-webkit-appearance:none;background:var(--s
     <button data-tab="buy"><svg viewBox="0 0 24 24"><circle cx="9" cy="21" r="1.3"/><circle cx="18" cy="21" r="1.3"/><path d="M2 3h2l2.4 12.2a2 2 0 0 0 2 1.6h8.2a2 2 0 0 0 2-1.6L21 7H6"/></svg>Buy<span class="badge" id="b-buy" hidden></span></button>
     <button data-tab="inbound"><svg viewBox="0 0 24 24"><path d="M1 8h14v9H1z"/><path d="M15 11h4l4 3v3h-8"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="19" r="2"/></svg>Inbound<span class="badge" id="b-inbound" hidden></span></button>
     <button data-tab="orders"><svg viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>Orders<span class="badge" id="b-orders" hidden></span></button>
-    <button data-tab="lots"><svg viewBox="0 0 24 24"><path d="M3 5h3v14H3zM8 5h2v14H8zM12 5h4v14h-4zM18 5h3v14h-3z"/></svg>Lots</button>
     <button data-tab="fba"><svg viewBox="0 0 24 24"><path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/></svg>FBA<span class="badge" id="b-fba" hidden></span></button>
   </div></nav>
 </div>
@@ -210,7 +205,12 @@ function sortSelectHTML(id, options, current){
   const mins = Math.round((Date.now() - t) / 60000);
   let rel = mins < 2 ? 'just now' : mins < 60 ? `${mins} min ago` : mins < 1440 ? `${Math.round(mins/60)} h ago` : `${Math.round(mins/1440)} d ago`;
   const abs = t.toLocaleString('en-US', {month:'numeric', day:'numeric', hour:'numeric', minute:'2-digit'});
-  $('#stamp').textContent = rel; $('#stamp').title = 'Pulled ' + abs;
+  const el = $('#stamp');
+  el.textContent = rel; el.title = 'Pulled ' + abs;
+  // GitHub's own 5-minute schedule isn't reliable (it's known to lag under load), so flag it
+  // plainly rather than let a stale pull look current: amber past 90 min, red past 6 hours.
+  el.style.color = mins > 360 ? 'var(--crit)' : mins > 90 ? 'var(--warn)' : '';
+  el.style.fontWeight = mins > 90 ? '600' : '';
 })();
 
 // ---- derived ----
@@ -252,8 +252,6 @@ const T = D.transfers;
 const tInbound = T.filter(t => t.dest === 'BBHQ' && !/received/i.test(t.shipStatus||''));
 const tStale = T.filter(t => /received/i.test(t.shipStatus||''));
 const tMoving = T.filter(t => !/received/i.test(t.shipStatus||'') && t.dest !== 'BBHQ');
-const lotted = P.filter(p => p.lots.length);
-
 // ---- Amazon FBA derived ----
 // Finale tracks Amazon as its own set of locations per SKU (Fulfillable, FC Processing/Transfer,
 // Inbound Receiving/Shipped, AWD Outbound, Unfulfillable, Researching). Bucket those into
@@ -746,26 +744,6 @@ function drawOrders(){
   ]));
 }
 
-// ---- LOTS ----
-function renderLots(){
-  const el = $('#s-lots');
-  const rows = lotted.slice().sort((a,b)=>(a.desc||'').localeCompare(b.desc||''));
-  const lotRow = p => {
-    const total = p.lots.reduce((a,l)=>a+l.qty,0);
-    const unlotted = p.onHand - total;
-    return `<li><button class="rowbtn" aria-expanded="false"><div><div class="t">${esc(p.desc||p.id)}</div><div class="s num">${esc(p.id)} · ${p.lots.length} lot${p.lots.length>1?'s':''}${unlotted>0?` · ${fmt(unlotted)} units without a lot`:''}</div></div><div class="r"><div class="big num">${fmt(p.onHand)}</div><span class="pill ${unlotted>0?'warn':'good'}">${unlotted>0?'partly lotted':'fully lotted'}</span></div></button>
-    <div class="detail"><div class="lotgrid"><div class="hd">Lot</div><div class="hd">Location</div><div class="hd q">Units</div>${p.lots.map(l=>`<div class="num">${esc(l.lot)}</div><div style="color:var(--ink-2)">${esc(l.loc)}</div><div class="q num">${fmt(l.qty)}</div>`).join('')}</div></div></li>`;
-  };
-  el.innerHTML = `
-  <div class="tiles" style="grid-template-columns:1fr 1fr">
-    <div class="tile"><span class="l">SKUs carrying lots</span><span class="v num">${lotted.length}</span><span class="d">of ${inStock.length} in stock</span></div>
-    <div class="tile"><span class="l">Units under a lot</span><span class="v num">${fmt(lotted.reduce((a,p)=>a+p.lots.reduce((x,l)=>x+l.qty,0),0))}</span><span class="d">of ${fmt(inStock.reduce((a,p)=>a+p.onHand,0))} on hand</span></div>
-  </div>
-  <div class="eyebrow">Lotted stock<span class="cnt num">${rows.length}</span></div>
-  ${listWithMore(rows, lotRow)}
-  <p class="note">Finale has lot tracking on, but only these SKUs have lot IDs recorded, and the IDs don't carry a best-by date. Expiry can't be tracked from Finale until lots are entered at receiving with a date in the lot ID or a custom field.</p>`;
-}
-
 // ---- FBA ----
 const FBA_SORTS = {
   auto: ['Ship-by date (default)', null],
@@ -847,7 +825,7 @@ function drawFBA(){
 
 // ---- nav ----
 const rendered = {};
-const renderers = { home: renderHome, stock: renderStock, buy: renderBuy, inbound: renderInbound, orders: renderOrders, lots: renderLots, fba: renderFBA };
+const renderers = { home: renderHome, stock: renderStock, buy: renderBuy, inbound: renderInbound, orders: renderOrders, fba: renderFBA };
 function go(tab, chip){
   document.querySelectorAll('section.screen').forEach(s => s.classList.toggle('active', s.id === 's-' + tab));
   document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
